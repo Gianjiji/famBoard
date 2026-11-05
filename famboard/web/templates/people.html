@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Persone · famboard{% endblock %}
+{% block body %}
+<div class="pagehead"><h1>Persone</h1></div>
+
+<section class="card">
+  <h2>Aggiungi persona</h2>
+  <form method="post" action="/people" class="rowform">
+    <input name="name" placeholder="Nome" required>
+    <select name="kind">
+      <option value="adult">Maggiorenne</option>
+      <option value="minor">Minorenne</option>
+    </select>
+    <input name="birth_year" placeholder="Anno nascita" inputmode="numeric" size="10">
+    <input name="note" placeholder="Note (opzionale)">
+    <button type="submit">Aggiungi</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Anagrafica</h2>
+  {% if people %}
+  <table>
+    <thead><tr><th>Nome</th><th>Tipo</th><th>Anno</th><th class="r">Dispositivi</th><th></th></tr></thead>
+    <tbody>
+    {% for p in people %}
+      <tr>
+        <td><a href="/person/{{ p.id }}">{{ p.name }}</a></td>
+        <td>{% if p.kind=='minor' %}<span class="tag warn">Minorenne</span>{% else %}<span class="tag">Maggiorenne</span>{% endif %}</td>
+        <td>{{ p.birth_year or '—' }}</td>
+        <td class="r">{{ p.n_devices }}</td>
+        <td class="r">
+          <details>
+            <summary>modifica</summary>
+            <form method="post" action="/people/{{ p.id }}/edit" class="rowform mt">
+              <input name="name" value="{{ p.name }}" required>
+              <select name="kind">
+                <option value="adult" {{ 'selected' if p.kind=='adult' }}>Maggiorenne</option>
+                <option value="minor" {{ 'selected' if p.kind=='minor' }}>Minorenne</option>
+              </select>
+              <input name="birth_year" value="{{ p.birth_year or '' }}" size="10">
+              <input name="note" value="{{ p.note or '' }}">
+              <button type="submit">Salva</button>
+            </form>
+            <form method="post" action="/people/{{ p.id }}/delete" onsubmit="return confirm('Eliminare {{ p.name }}?')">
+              <button type="submit" class="danger">Elimina</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted">Nessuna persona ancora. Aggiungine una qui sopra.</p>
+  {% endif %}
+</section>
+{% endblock %}

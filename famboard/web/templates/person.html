@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ person.name }} · famboard{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <h1>{{ person.name }}
+    {% if person.kind=='minor' %}<span class="tag warn">Minorenne</span>{% else %}<span class="tag">Maggiorenne</span>{% endif %}
+  </h1>
+  <div class="windowpick">
+    {% for w in windows %}<a href="/person/{{ person.id }}?window={{ w }}" class="chip {{ 'on' if w==window }}">{{ w }}</a>{% endfor %}
+  </div>
+</div>
+
+<section class="card">
+  <h2>Dispositivi ({{ devices|length }})</h2>
+  {% if devices %}
+    <ul class="devlist">
+    {% for d in devices %}<li><a href="/device/{{ d.id }}">{{ d.label or d.mac }}</a>
+        {% if d.device_type %}<span class="tag">{{ d.device_type }}</span>{% endif %}
+        <span class="muted small">{{ d.vendor or '' }}</span></li>{% endfor %}
+    </ul>
+  {% else %}<p class="muted">Nessun dispositivo assegnato. Assegnane in <a href="/devices">Dispositivi</a>.</p>{% endif %}
+</section>
+
+{% if devices %}
+<section class="card control">
+  <h2>🛡️ Controllo rapido internet</h2>
+  <p class="muted small">Agisce su tutti i dispositivi di {{ person.name }}. Per regole mirate (a tempo o pianificate) apri il singolo dispositivo.</p>
+  <div class="rowform">
+    <form method="post" action="/person/{{ person.id }}/control/block-all">
+      <button class="danger">Blocca internet su tutti i dispositivi</button>
+    </form>
+    <form method="post" action="/person/{{ person.id }}/control/allow-all">
+      <button class="ghost">Riattiva tutti</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{% if sensitive %}
+<section class="card alert">
+  <h2>⚠️ Categorie sensibili</h2>
+  {% for c in sensitive %}
+    <h3><span class="dot" style="background:{{ c.color }}"></span>{{ c.label }} — {{ c.n }} accessi
+        {% if c.risk_level==2 %}<span class="tag hi">alto rischio</span>{% endif %}</h3>
+    <table class="small">
+      <tbody>
+      {% for s in samples[c.key] %}
+        <tr><td class="muted">{{ s.ts | int | datetime }}</td>
+            <td class="mono">{{ s.domain }}</td><td class="muted">{{ s.device }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Attività per categoria</h2>
+  {% if cats %}
+    <table class="catlist">
+      <tbody>
+      {% for c in cats %}
+        <tr><td><span class="dot" style="background:{{ c.color }}"></span>{{ c.label }}
+            {% if c.minor_sensitive %}<span class="tag warn">sensibile</span>{% endif %}</td>
+            <td class="r">{{ c.n }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<p class="muted">Nessun dato classificato nel periodo per questa persona.</p>{% endif %}
+</section>
+
+{% include "_analytics.html" %}
+{% endblock %}

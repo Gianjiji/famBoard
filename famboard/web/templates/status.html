@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Stato · famboard{% endblock %}
+{% block body %}
+<div class="pagehead"><h1>Stato del sistema</h1></div>
+
+<section class="card">
+  <h2>Connessione Pi-hole</h2>
+  <table class="small">
+    <tr><td class="muted">Indirizzo</td><td class="mono">{{ pihole_url }}</td></tr>
+    <tr><td class="muted">Stato</td>
+        <td>{% if pihole_ok %}<span class="ok-dot"></span> connesso{% else %}<span class="err-dot"></span> non raggiungibile{% endif %}</td></tr>
+    <tr><td class="muted">Dettagli</td><td>{{ pihole_info }}</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Raccolta dati</h2>
+  <table class="small">
+    <tr><td class="muted">Intervallo poller</td><td>{{ poll_interval }}s</td></tr>
+    <tr><td class="muted">Ultimo evento raccolto</td>
+        <td>{% if cov.last_age is not none %}{{ cov.last_age | int }}s fa{% else %}—{% endif %}</td></tr>
+    <tr><td class="muted">Eventi in archivio</td><td>{{ "{:,}".format(cov.events) }}</td></tr>
+    <tr><td class="muted">Eventi classificati</td>
+        <td>{{ "{:,}".format(cov.classified) }}
+            {% if cov.events %}({{ (100*cov.classified/cov.events) | round | int }}%){% endif %}</td></tr>
+    <tr><td class="muted">Indice domini→categoria</td><td>{{ "{:,}".format(cov.index) }} voci</td></tr>
+  </table>
+</section>
+
+<section class="card control">
+  <h2>🛡️ Applicazione controllo accessi</h2>
+  <p class="small">Quando è <b>attiva</b>, famboard impone davvero i blocchi configurati scrivendo
+     regole per-dispositivo sul Pi-hole (gruppi + client via MAC). Quando è disattiva, le regole
+     vengono salvate ma non applicate.</p>
+  {% if enforce_on %}
+    <p><span class="ok-dot"></span> <b>Attiva</b> — i blocchi vengono imposti.</p>
+    <form method="post" action="/status/enforce"><input type="hidden" name="enable" value="0">
+      <button class="ghost">Disattiva applicazione</button></form>
+  {% else %}
+    <p><span class="err-dot"></span> <b>Disattiva</b> — nessun blocco imposto.</p>
+    <p class="warnbox small">⚠️ Attivandola, famboard creerà gruppi e client sul Pi-hole. Verifica il
+       comportamento su un dispositivo di prova prima di affidartici per i minori.</p>
+    <form method="post" action="/status/enforce"><input type="hidden" name="enable" value="1">
+      <button class="danger">Attiva applicazione</button></form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Configurazione</h2>
+  <table class="small">
+    <tr><td class="muted">Autenticazione dashboard</td>
+        <td>{% if auth_on %}<span class="ok-dot"></span> attiva{% else %}<span class="err-dot"></span> disattivata (solo LAN){% endif %}</td></tr>
+    <tr><td class="muted">Notifiche webhook</td>
+        <td>{% if webhook_set %}<span class="ok-dot"></span> configurate{% else %}non configurate{% endif %}</td></tr>
+  </table>
+</section>
+{% endblock %}

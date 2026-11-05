@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1016">
+  <title>{% block title %}famboard{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/style.css?v=2">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="/static/charts.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg class="logomark" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M14 30 32 15 50 30v18a3 3 0 0 1-3 3H17a3 3 0 0 1-3-3Z" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linejoin="round"/>
+        <path d="M20 38h6l4-8 6 14 4-6h4" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>famboard</span><span class="brand-sub">monitoraggio familiare</span>
+    </a>
+    <nav>
+      <a href="/" class="{{ 'active' if nav=='home' }}">Panoramica</a>
+      <a href="/people" class="{{ 'active' if nav=='people' }}">Persone</a>
+      <a href="/devices" class="{{ 'active' if nav=='devices' }}">Dispositivi</a>
+      <a href="/alerts" class="{{ 'active' if nav=='alerts' }}">Avvisi
+        {% if alert_count %}<span class="badge">{{ alert_count }}</span>{% endif %}</a>
+      <a href="/status" class="{{ 'active' if nav=='status' }}">Stato</a>
+    </nav>
+    <a href="/logout" class="logout">Esci</a>
+  </header>
+  <main>
+    {% block body %}{% endblock %}
+  </main>
+</body>
+</html>

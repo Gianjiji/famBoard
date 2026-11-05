@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Panoramica · famboard{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <h1>Panoramica</h1>
+  <div class="windowpick">
+    {% for w in windows %}
+      <a href="/?window={{ w }}" class="chip {{ 'on' if w==window }}">{{ w }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<section class="stats">
+  <div class="stat"><div class="num">{{ "{:,}".format(ov.total) }}</div><div class="lbl">Richieste DNS</div></div>
+  <div class="stat"><div class="num">{{ "{:,}".format(ov.blocked) }}</div><div class="lbl">Bloccate</div></div>
+  <div class="stat"><div class="num">{{ "{:,}".format(ov.classified) }}</div><div class="lbl">Classificate</div></div>
+</section>
+
+{% if critical %}
+<section class="card alert crit">
+  <h2>🆘 Possibili segnali di disagio</h2>
+  <p class="muted small">Accessi a domini legati a crisi / autolesionismo / disturbi alimentari (incluse le linee di aiuto).
+     Il DNS mostra solo i domini visitati, non le ricerche. Trattalo come uno spunto per un confronto sereno, non come una prova.</p>
+  <table>
+    <thead><tr><th>Persona</th><th>Dispositivo</th><th>Categoria</th><th class="r">Accessi</th></tr></thead>
+    <tbody>
+    {% for a in critical %}
+      <tr>
+        <td>{% if a.person_id %}<a href="/person/{{ a.person_id }}">{{ a.person }}</a>
+            {% if a.person_kind=='minor' %}<span class="tag warn">minore</span>{% endif %}
+            {% else %}{{ a.person }}{% endif %}</td>
+        <td class="small">{% if a.device_id %}<a href="/device/{{ a.device_id }}?window={{ window }}&cat={{ a.cat_key }}#log">{{ a.device }}</a>
+            {% else %}{{ a.device }}{% endif %}</td>
+        <td><span class="dot" style="background:{{ a.color }}"></span>{{ a.category }}</td>
+        <td class="r">{{ a.n }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="small"><a href="/alerts?scope=all">Vedi tutti gli avvisi →</a></p>
+</section>
+{% endif %}
+
+{% if alerts or unassigned %}
+<section class="card alert">
+  <h2>⚠️ Attenzione — categorie sensibili per minori</h2>
+  {% if alerts %}
+  <table>
+    <thead><tr><th>Persona</th><th>Categoria</th><th class="r">Accessi</th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      <tr>
+        <td><a href="/person/{{ a.person_id }}">{{ a.person }}</a></td>
+        <td><span class="dot" style="background:{{ a.color }}"></span>{{ a.category }}
+            {% if a.risk_level==2 %}<span class="tag hi">alto rischio</span>{% endif %}</td>
+        <td class="r">{{ a.n }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="small"><a href="/alerts">Vedi tutti gli avvisi →</a></p>
+  {% endif %}
+  {% if unassigned %}
+    <p class="muted small">Hit sensibili da dispositivi <b>non ancora assegnati</b> — assegnali in <a href="/devices">Dispositivi</a>:</p>
+    <table>
+      <tbody>
+      {% for u in unassigned %}
+        <tr><td>{% if u.device_id %}<a href="/device/{{ u.device_id }}?window={{ window }}&cat={{ u.cat_key }}#log">{{ u.device }}</a>
+                {% else %}{{ u.device }}{% endif %}</td>
+            <td><span class="dot" style="background:{{ u.color }}"></span>{{ u.category }}</td>
+            <td class="r">{{ u.n }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% else %}
+<section class="card ok"><h2>✓ Nessun accesso a categorie sensibili per minori nel periodo</h2></section>
+{% endif %}
+
+<section class="card">
+  <h2>Attività per categoria</h2>
+  {% if cats %}
+  <div class="catgrid">
+    <div class="chartbox"><canvas id="catchart"></canvas></div>
+    <table class="catlist">
+      <tbody>
+      {% for c in cats %}
+        <tr>
+          <td><span class="dot" style="background:{{ c.color }}"></span>{{ c.label }}
+              {% if c.minor_sensitive %}<span class="tag warn">sensibile</span>{% endif %}</td>
+          <td class="r">{{ c.n }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <script>
+    new Chart(document.getElementById('catchart'), {
+      type: 'doughnut',
+      data: {
+        labels: {{ cats | map(attribute='label') | list | tojson }},
+        datasets: [{ data: {{ cats | map(attribute='n') | list | tojson }},
+                     backgroundColor: {{ cats | map(attribute='color') | list | tojson }} }]
+      },
+      options: { plugins: { legend: { display: false } }, cutout: '64%' }
+    });
+  </script>
+  {% else %}
+    <p class="muted">Nessun dato classificato nel periodo. Il poller raccoglie dal Pi-hole di continuo; lascia girare qualche minuto o importa lo storico con <span class="mono">famboard.cli backfill</span>.</p>
+  {% endif %}
+</section>
+
+{% include "_analytics.html" %}
+{% endblock %}

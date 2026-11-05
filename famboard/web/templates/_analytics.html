@@ -1,0 +1,65 @@
+{% if timeline %}
+<section class="card">
+  <h2>Andamento nel tempo</h2>
+  <div class="chartwide"><canvas id="tlchart"></canvas></div>
+  <script>
+    new Chart(document.getElementById('tlchart'), {
+      type: 'line',
+      data: {
+        labels: {{ timeline | map(attribute='label') | list | tojson }},
+        datasets: [
+          { label: 'Richieste', data: {{ timeline | map(attribute='total') | list | tojson }},
+            borderColor: fbTheme.accent, backgroundColor: fbTheme.accentFill, fill: true, tension: .35 },
+          { label: 'Bloccate', data: {{ timeline | map(attribute='blocked') | list | tojson }},
+            borderColor: fbTheme.danger, backgroundColor: 'transparent', tension: .35 }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: { x: { grid: { display: false } }, y: { beginAtZero: true } }
+      }
+    });
+  </script>
+</section>
+{% endif %}
+
+{% if hourly %}
+<section class="card">
+  <h2>Attività per fascia oraria <span class="muted small">(in arancio le ore notturne, 22–7)</span></h2>
+  <div class="chartwide"><canvas id="hrchart"></canvas></div>
+  <script>
+    (function() {
+      var data = {{ hourly | list | tojson }};
+      var colors = data.map(function(_, h) { return (h >= 22 || h < 7) ? fbTheme.night : fbTheme.accent; });
+      new Chart(document.getElementById('hrchart'), {
+        type: 'bar',
+        data: { labels: Array.from({length: 24}, function(_, h) { return h + ':00'; }),
+                datasets: [{ data: data, backgroundColor: colors, maxBarThickness: 26 }] },
+        options: {
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { beginAtZero: true } }
+        }
+      });
+    })();
+  </script>
+</section>
+{% endif %}
+
+{% if topdom %}
+<section class="card">
+  <h2>Domini più contattati</h2>
+  <table class="small">
+    <tbody>
+    {% for t in topdom %}
+      <tr>
+        <td class="mono">{{ t.domain }}</td>
+        <td>{% if t.color %}<span class="dot" style="background:{{ t.color }}"></span>{% endif %}{{ t.category }}</td>
+        <td class="r">{{ t.n }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

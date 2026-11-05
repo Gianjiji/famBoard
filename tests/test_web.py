@@ -1,0 +1,91 @@
+"""Functional + SECURITY: web dashboard (FastAPI TestClient)."""
+from famboard import db
+from famboard.config import settings
+
+
+# --- security: authentication -------------------------------------------
+def test_protected_page_redirects_when_anonymous(anon_client):
+    r = anon_client.get("/")
+    assert r.status_code == 303
+    assert r.headers["location"] == "/login"
+
+
+def test_login_page_and_health_are_public(anon_client):
+    assert anon_client.get("/login").status_code == 200
+    assert anon_client.get("/health").status_code == 200
+
+
+def test_wrong_password_does_not_authenticate(anon_client):
+    anon_client.post("/login", data={"password": "WRONG"})
+    assert anon_client.get("/").status_code == 303  # still blocked
+
+
+def test_correct_login_grants_access(anon_client):
+    anon_client.post("/login", data={"password": "testpass"})
+    assert anon_client.get("/").status_code == 200
+
+
+# --- functional: pages render -------------------------------------------
+def test_main_pages_render(client):
+    for path in ("/", "/people", "/devices", "/alerts", "/status",
+                 "/?window=7d", "/alerts?scope=all"):
+        assert client.get(path).status_code == 200, path
+
+
+# --- security: no secret leakage ----------------------------------------
+def test_dashboard_does_not_leak_password(client):
+    assert "testpass" not in client.get("/").text
+
+
+# --- functional + security: person CRUD, injection-safe -----------------
+def test_person_crud_and_sql_injection_safe(client):
+    malicious = "Robert'); DROP TABLE person;--"
+    client.post("/people", data={"name": malicious, "kind": "minor"})
+    # table must still exist and the name stored literally (parameterized SQL)
+    conn = db.connect(settings.db_path)
+    try:
+        names = [r["name"] for r in conn.execute("SELECT name FROM person")]
+    finally:
+        conn.close()
+    assert malicious in names
+    assert client.get("/people").status_code == 200
+
+
+def test_device_activity_log_with_category_filter(client):
+    import time
+    conn = db.connect(settings.db_path)
+    conn.execute("INSERT INTO device(mac) VALUES('aa:bb:cc:dd:ee:50')")
+    now = time.time()
+    conn.executemany(
+        "INSERT INTO query_event(ts, domain, mac, category_key, blocked) "
+        "VALUES(?,?,?,?,?)",
+        [(now - 60, "facebook.com", "aa:bb:cc:dd:ee:50", "social", 0),
+         (now - 30, "pornsite.example", "aa:bb:cc:dd:ee:50", "adult", 1)])
+    conn.commit()
+    did = conn.execute("SELECT id FROM device WHERE mac='aa:bb:cc:dd:ee:50'").fetchone()["id"]
+    conn.close()
+    full = client.get(f"/device/{did}")
+    assert full.status_code == 200
+    assert "facebook.com" in full.text and "pornsite.example" in full.text
+    filtered = client.get(f"/device/{did}?cat=adult")
+    assert filtered.status_code == 200
+    assert "pornsite.example" in filtered.text
+    # the log table must not list the social-only domain when filtered
+    log_part = filtered.text.split('id="log"')[1].split("</section>")[0]
+    assert "facebook.com" not in log_part
+
+
+def test_device_control_rule_flow(client):
+    conn = db.connect(settings.db_path)
+    conn.execute("INSERT INTO device(mac) VALUES('aa:bb:cc:dd:ee:40')")
+    conn.commit()
+    did = conn.execute("SELECT id FROM device WHERE mac='aa:bb:cc:dd:ee:40'").fetchone()["id"]
+    conn.close()
+    assert client.get(f"/device/{did}").status_code == 200
+    # create a quota rule, then clear it
+    client.post(f"/device/{did}/control/quota", data={"target": "social", "minutes": "60"})
+    conn = db.connect(settings.db_path)
+    n = conn.execute("SELECT COUNT(*) n FROM control_rule WHERE mac='aa:bb:cc:dd:ee:40'").fetchone()["n"]
+    conn.close()
+    assert n == 1
+    client.post(f"/device/{did}/control/allow")

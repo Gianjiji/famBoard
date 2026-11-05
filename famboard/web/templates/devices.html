@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Dispositivi · famboard{% endblock %}
+{% block body %}
+<div class="pagehead"><h1>Dispositivi</h1></div>
+<p class="muted small">Rilevati dal Pi-hole tramite MAC. Dai un nome a ciascuno e assegnalo a una persona, oppure segnalo come <b>uso familiare</b> (condiviso).</p>
+
+<section class="card">
+  <div class="typefilter">
+    <span class="muted small">Filtra per tipo:</span>
+    {% for t in device_types %}
+      <label class="chip filt"><input type="checkbox" class="tfilter" value="{{ t }}" checked> {{ t }}</label>
+    {% endfor %}
+    <a href="#" id="tf-all" class="small">tutti</a> ·
+    <a href="#" id="tf-none" class="small">nessuno</a>
+    <span class="muted small" id="tf-count"></span>
+  </div>
+</section>
+
+{% if suggestions %}
+<section class="card">
+  <h2>💡 Possibili stessi dispositivi</h2>
+  <p class="muted small">Coppie di MAC randomizzati con pattern di navigazione simili: potrebbero essere lo stesso telefono. Apri un dispositivo e usa "Unisci" per raggrupparli.</p>
+  <table class="small">
+    <tbody>
+    {% for s in suggestions %}
+      <tr>
+        <td><a href="/device/{{ s.a.id }}">{{ s.a.label or s.a.mac }}</a> ↔
+            <a href="/device/{{ s.b.id }}">{{ s.b.label or s.b.mac }}</a></td>
+        <td class="r muted">somiglianza {{ (s.similarity*100)|int }}% ({{ s.shared }} domini in comune)</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <table>
+    <thead><tr><th>Dispositivo</th><th>MAC / Produttore</th><th>Assegnazione</th><th></th></tr></thead>
+    <tbody>
+    {% for d in devices %}
+      <tr data-dtype="{{ d.device_type or 'senza tipo' }}">
+        <form method="post" action="/devices/{{ d.id }}">
+          <td>
+            <input name="label" value="{{ d.label or '' }}" placeholder="Nome (es. iPhone di Anna)">
+            <input name="device_type" value="{{ d.device_type or '' }}" placeholder="Tipo (phone, tv…)" size="12">
+            <a href="/device/{{ d.id }}" class="small">dettagli →</a>
+            {% if d.n_macs and d.n_macs > 1 %}<span class="tag">{{ d.n_macs }} MAC</span>{% endif %}
+          </td>
+          <td class="mono small">{{ d.mac }}<br><span class="muted">{{ d.vendor or '—' }}</span></td>
+          <td>
+            <select name="assignment">
+              <option value="">— Non assegnato —</option>
+              <option value="shared" {{ 'selected' if d.is_shared }}>Uso familiare (condiviso)</option>
+              {% for p in people %}
+                <option value="p{{ p.id }}" {{ 'selected' if d.person_id==p.id }}>{{ p.name }}{{ ' (minore)' if p.kind=='minor' }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td class="r"><button type="submit">Salva</button></td>
+        </form>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+  var checks = Array.prototype.slice.call(document.querySelectorAll('.tfilter'));
+  function applyFilter() {
+    var active = {};
+    checks.forEach(function(c) { if (c.checked) active[c.value] = 1; });
+    var shown = 0;
+    document.querySelectorAll('tr[data-dtype]').forEach(function(tr) {
+      var on = active[tr.dataset.dtype];
+      tr.style.display = on ? '' : 'none';
+      if (on) shown++;
+    });
+    document.getElementById('tf-count').textContent = shown + ' dispositivi';
+  }
+  checks.forEach(function(c) { c.addEventListener('change', applyFilter); });
+  document.getElementById('tf-all').addEventListener('click', function(e) {
+    e.preventDefault(); checks.forEach(function(c) { c.checked = true; }); applyFilter();
+  });
+  document.getElementById('tf-none').addEventListener('click', function(e) {
+    e.preventDefault(); checks.forEach(function(c) { c.checked = false; }); applyFilter();
+  });
+  applyFilter();
+</script>
+{% endblock %}
