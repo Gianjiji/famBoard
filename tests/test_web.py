@@ -89,3 +89,37 @@ def test_device_control_rule_flow(client):
     conn.close()
     assert n == 1
     client.post(f"/device/{did}/control/allow")
+
+
+# --- functional: category drill-down ------------------------------------
+def test_category_page_lists_devices_and_domains(client):
+    import time
+    conn = db.connect(settings.db_path)
+    conn.execute("INSERT INTO device(mac, label) VALUES('aa:bb:cc:dd:ee:60','TabletTest')")
+    conn.execute("INSERT INTO person(name, kind) VALUES('CatKid','minor')")
+    pid = conn.execute("SELECT id FROM person WHERE name='CatKid'").fetchone()["id"]
+    conn.execute("UPDATE device SET person_id=? WHERE mac='aa:bb:cc:dd:ee:60'", (pid,))
+    now = time.time()
+    conn.executemany(
+        "INSERT INTO query_event(ts, domain, mac, category_key, blocked) "
+        "VALUES(?,?,?,?,?)",
+        [(now - 60, "facebook.com", "aa:bb:cc:dd:ee:60", "social", 0),
+         (now - 30, "netflix.com", "aa:bb:cc:dd:ee:60", "entertainment", 0)])
+    conn.commit()
+    conn.close()
+
+    r = client.get("/category/social")
+    assert r.status_code == 200
+    assert "facebook.com" in r.text and "TabletTest" in r.text
+    assert "netflix.com" not in r.text  # other categories stay out
+
+    # person filter: only that person's devices
+    r = client.get(f"/category/social?pid={pid}")
+    assert r.status_code == 200 and "facebook.com" in r.text
+
+    # unknown category -> safe redirect home, no error page
+    r = client.get("/category/nope", follow_redirects=False)
+    assert r.status_code == 303
+
+    # home page links to the category drill-down
+    assert '/category/social' in client.get("/").text

@@ -144,6 +144,8 @@ a.chip:hover { background: var(--panel2); color: var(--fg); text-decoration: non
 .catgrid > * { min-width: 0; }
 .chartbox { max-width: 240px; }
 .catlist td { border-bottom: 1px solid var(--line); }
+.catlist a.catlink { color: inherit; text-decoration: none; }
+.catlist a.catlink:hover { color: var(--accent); text-decoration: underline; }
 .chartwide { position: relative; height: 260px; }
 
 /* ---------- form ---------- */

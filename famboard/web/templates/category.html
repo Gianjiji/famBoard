@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ cat.label }} · famboard{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <h1><span class="dot" style="background:{{ cat.color }}"></span> {{ cat.label }}
+    {% if cat.minor_sensitive %}<span class="tag warn">sensibile</span>{% endif %}
+    {% if cat.critical %}<span class="tag hi">disagio</span>{% endif %}
+    {% if person %}<span class="tag">{{ person.name }}</span>{% endif %}
+  </h1>
+  <div class="windowpick">
+    {% for w in windows %}<a href="/category/{{ cat.key }}?window={{ w }}{% if person %}&pid={{ person.id }}{% endif %}"
+       class="chip {{ 'on' if w==window }}">{{ w }}</a>{% endfor %}
+  </div>
+</div>
+
+<section class="card">
+  <h2>Chi ha raggiunto cosa <span class="muted small">(dispositivo, dominio e quando)</span></h2>
+  {% if log %}
+  <table class="small mt">
+    <thead><tr><th>Quando</th><th>Dispositivo</th><th>Dominio</th><th class="r">Richieste</th><th></th></tr></thead>
+    <tbody>
+    {% for e in log %}
+      <tr>
+        <td class="muted">{{ e.ts | int | datetime }}</td>
+        <td>{% if e.device_id %}<a href="/device/{{ e.device_id }}?window={{ window }}&cat={{ cat.key }}#log">{{ e.device }}</a>
+            {% else %}<span class="mono">{{ e.device }}</span>{% endif %}</td>
+        <td class="mono">{{ e.domain }}</td>
+        <td class="r">{{ e.n }}</td>
+        <td>{% if e.blocked %}<span class="tag">bloccata</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small mt">Richieste ravvicinate allo stesso dominio dallo stesso dispositivo sono
+     raggruppate (finestre di 5 minuti); al massimo 150 righe. Clicca il dispositivo per il suo registro completo.</p>
+  {% else %}
+  <p class="muted">Nessuna richiesta in questa categoria nel periodo{% if person %} per {{ person.name }}{% endif %}.</p>
+  {% endif %}
+</section>
+{% endblock %}

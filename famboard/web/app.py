@@ -146,6 +146,31 @@ def index(request: Request, window: str = "24h"):
     return templates.TemplateResponse(request, "index.html", ctx)
 
 
+@app.get("/category/{key}")
+def category_detail(request: Request, key: str, window: str = "24h", pid: int = 0):
+    """Cross-device drill-down: who reached which domains of this category."""
+    conn = db.connect(settings.db_path)
+    try:
+        cat = conn.execute("SELECT * FROM category WHERE key=?", (key,)).fetchone()
+        if cat is None:
+            return RedirectResponse("/", status_code=303)
+        person = None
+        macs = None
+        if pid:
+            row = conn.execute("SELECT * FROM person WHERE id=?", (pid,)).fetchone()
+            if row is not None:
+                person = dict(row)
+                macs = analytics.device_macs_for_person(conn, pid)
+        since = analytics.since_ts(window)
+        ctx = _ctx(request, conn, "home",
+                   window=window, windows=list(analytics.WINDOWS),
+                   cat=dict(cat), person=person,
+                   log=analytics.category_log(conn, since, key, macs=macs))
+    finally:
+        conn.close()
+    return templates.TemplateResponse(request, "category.html", ctx)
+
+
 # -- people ----------------------------------------------------------------
 @app.get("/people")
 def people_page(request: Request):

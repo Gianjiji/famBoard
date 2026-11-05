@@ -215,6 +215,24 @@ def recent_events(conn: sqlite3.Connection, since: float, macs: list[str] | None
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
+def category_log(conn: sqlite3.Connection, since: float, cat_key: str,
+                 macs: list[str] | None = None, limit: int = 150) -> list[dict]:
+    """Cross-device visit log for one category: which device reached which
+    domain and when. Bursts of the same domain from the same device are
+    grouped in 5-minute buckets, like recent_events."""
+    sql = ("SELECT MAX(e.ts) ts, e.domain, e.blocked, COUNT(*) n, "
+           "       COALESCE(d.label, e.mac, '?') device, "
+           "       COALESCE(d.merged_into, d.id) device_id "
+           "FROM query_event e LEFT JOIN device d ON d.mac = e.mac "
+           "WHERE e.ts >= ? AND e.category_key = ?")
+    params: list = [since, cat_key]
+    sql += _mac_clause(macs, params)
+    sql += (" GROUP BY e.domain, e.mac, e.blocked, CAST(e.ts / 300 AS INT) "
+            "ORDER BY ts DESC LIMIT ?")
+    params.append(limit)
+    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
 def recent_by_category(conn: sqlite3.Connection, since: float, cat_key: str,
                       macs: list[str] | None = None, limit: int = 50) -> list[dict]:
     sql = ("SELECT e.ts, e.domain, e.mac, COALESCE(d.label, e.mac) device "

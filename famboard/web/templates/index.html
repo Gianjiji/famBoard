@@ -89,7 +89,7 @@
         <tr>
           <td><span class="dot" style="background:{{ c.color }}"></span>{{ c.label }}
               {% if c.minor_sensitive %}<span class="tag warn">sensibile</span>{% endif %}</td>
-          <td class="r">{{ c.n }}</td>
+          <td class="r"><a class="catlink" href="/category/{{ c.key }}?window={{ window }}">{{ c.n }}</a></td>
         </tr>
       {% endfor %}
       </tbody>
