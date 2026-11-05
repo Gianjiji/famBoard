@@ -30,7 +30,7 @@ Pi-hole (192.168.1.46)  --REST API-->  famboard
 ## Installazione (da zero)
 
 ```bash
-sudo ./install.sh
+sudo ./setup.sh
 ```
 
 L'installer: crea il virtualenv e installa le dipendenze; **cerca il Pi-hole**
@@ -42,7 +42,7 @@ scarica le liste categorie, e installa/avvia il servizio systemd + il timer dei
 report. Variabili `PIHOLE_URL`/`PIHOLE_PASSWORD`/`APP_PASSWORD` preimpostate
 nell'ambiente rendono l'installazione non interattiva.
 
-**Disinstallazione pulita:** `sudo ./uninstall.sh` (aggiungi `--purge` per
+**Disinstallazione pulita:** `sudo ./teardown.sh` (aggiungi `--purge` per
 cancellare anche il database). Ferma e rimuove i servizi, **elimina dal Pi-hole
 tutti i gruppi/client/regex creati da famboard**, e rimuove venv/`.env`.
 
