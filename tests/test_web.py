@@ -123,3 +123,11 @@ def test_category_page_lists_devices_and_domains(client):
 
     # home page links to the category drill-down
     assert '/category/social' in client.get("/").text
+
+
+# --- regression: non-ASCII password must not crash the login ------------
+def test_login_with_non_ascii_password_fails_cleanly(anon_client):
+    r = anon_client.post("/login", data={"password": "perché±”"})
+    assert r.status_code == 303                      # no 500
+    assert r.headers["location"] == "/login?error=1"
+    assert anon_client.get("/").status_code == 303   # still not authenticated

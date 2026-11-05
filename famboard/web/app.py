@@ -108,7 +108,10 @@ def login_form(request: Request, error: str = ""):
 
 @app.post("/login")
 def login(request: Request, password: str = Form(...)):
-    if settings.app_password and hmac.compare_digest(password, settings.app_password):
+    # compare bytes: compare_digest refuses non-ASCII str (typed accents/smart
+    # quotes must fail auth cleanly, not crash with a 500)
+    if settings.app_password and hmac.compare_digest(
+            password.encode("utf-8"), settings.app_password.encode("utf-8")):
         request.session["auth"] = True
         return RedirectResponse("/", status_code=303)
     return RedirectResponse("/login?error=1", status_code=303)
