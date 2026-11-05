@@ -189,15 +189,55 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+    cat > /etc/systemd/system/famboard-80.socket <<EOF
+[Unit]
+Description=famboard - ascolto su porta 80 (inoltro a $PORT)
+[Socket]
+ListenStream=80
+[Install]
+WantedBy=sockets.target
+EOF
+    cat > /etc/systemd/system/famboard-80.service <<EOF
+[Unit]
+Description=famboard - proxy porta 80 -> $PORT
+Requires=famboard.service
+After=famboard.service
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd 127.0.0.1:$PORT
+EOF
     systemctl daemon-reload
     systemctl enable --now famboard.service
     systemctl enable --now famboard-report.timer
+    systemctl enable --now famboard-80.socket 2>/dev/null \
+        || warn "Porta 80 non attivata (occupata?): la dashboard resta su :$PORT."
     say "Servizio avviato."
 else
     warn "systemd non disponibile o non root: avvia manualmente con"
     warn "  .venv/bin/uvicorn famboard.web.app:app --host 0.0.0.0 --port $PORT"
 fi
 
+# 7) nome di rete (es. http://famboard.home) ---------------------------------
+FAMBOARD_HOST="${FAMBOARD_HOST:-famboard.home}"
 IP_LOCAL="$(hostname -I 2>/dev/null | awk '{print $1}')"
-say "Fatto! Dashboard: http://${IP_LOCAL:-<questo-host>}:$PORT"
+if [ -n "$FAMBOARD_HOST" ] && [ -n "$IP_LOCAL" ]; then
+    say "Registrazione DNS locale '$FAMBOARD_HOST' sul Pi-hole..."
+    FAMBOARD_HOST="$FAMBOARD_HOST" IP_LOCAL="$IP_LOCAL" .venv/bin/python - <<'PY' \
+        || warn "Record DNS non registrato: aggiungilo dal pannello Pi-hole (Local DNS)."
+import os
+from famboard.config import settings
+from famboard.pihole import PiholeClient
+host, ip = os.environ["FAMBOARD_HOST"], os.environ["IP_LOCAL"]
+with PiholeClient(settings.pihole_url, settings.pihole_password,
+                  verify_tls=settings.pihole_verify_tls) as c:
+    for e in c.dns_hosts():
+        parts = e.split()
+        if len(parts) == 2 and parts[1] == host and parts[0] != ip:
+            c.delete_dns_host(e)          # stale IP for our hostname
+    if f"{ip} {host}" not in c.dns_hosts():
+        c.add_dns_host(ip, host)
+print(f"  {host} -> {ip}")
+PY
+fi
+
+say "Fatto! Dashboard: http://${FAMBOARD_HOST:-$IP_LOCAL} (oppure http://${IP_LOCAL:-<questo-host>}:$PORT)"
 say "Password dashboard: $APP_PASS   (modificabile in .env, voce APP_PASSWORD)"

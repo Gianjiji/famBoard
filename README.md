@@ -42,6 +42,14 @@ scarica le liste categorie, e installa/avvia il servizio systemd + il timer dei
 report. Variabili `PIHOLE_URL`/`PIHOLE_PASSWORD`/`APP_PASSWORD` preimpostate
 nell'ambiente rendono l'installazione non interattiva.
 
+**Nome di rete:** il setup registra sul Pi-hole il record DNS locale
+**`famboard.home`** → IP del server e attiva un proxy systemd sulla porta 80
+(`famboard-80.socket`, inoltro alla porta dell'app): la dashboard si apre
+digitando `http://famboard.home`, senza IP né porta. Personalizzabile con
+`FAMBOARD_HOST=nome.che.vuoi` (vuoto per saltare il passaggio); meglio evitare
+nomi `.local`, che i dispositivi Apple risolvono solo via mDNS ignorando il
+Pi-hole. `teardown.sh` rimuove sia il record DNS che il proxy.
+
 **Disinstallazione pulita:** `sudo ./teardown.sh` (aggiungi `--purge` per
 cancellare anche il database). Ferma e rimuove i servizi, **elimina dal Pi-hole
 tutti i gruppi/client/regex creati da famboard**, e rimuove venv/`.env`.
@@ -69,7 +77,8 @@ curl -o data/categories/blacklists.tar.gz \
 .venv/bin/uvicorn famboard.web.app:app --host 0.0.0.0 --port 8080
 ```
 
-Dashboard: `http://<host>:8080`. Il poller gira dentro lo stesso processo e
+Dashboard: `http://<host>:8080` (o `http://famboard.home` se installato con
+`setup.sh`). Il poller gira dentro lo stesso processo e
 aggiorna i dati dal Pi-hole ogni `POLL_INTERVAL` secondi.
 
 ### Avvio persistente (systemd)

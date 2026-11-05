@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 from typing import Iterator
+from urllib.parse import quote
 
 import httpx
 
@@ -76,6 +77,18 @@ class PiholeClient:
         """Forget a device in the Pi-hole network table. Without this, pruning
         it from famboard is useless: the poller re-imports it on the next cycle."""
         return self._request("DELETE", f"/api/network/devices/{device_id}")
+
+    # local DNS records ("IP hostname" entries in dns.hosts)
+    def dns_hosts(self) -> list[str]:
+        data = self._request("GET", "/api/config/dns/hosts")
+        return data.get("config", {}).get("dns", {}).get("hosts", [])
+
+    def add_dns_host(self, ip: str, hostname: str) -> dict:
+        return self._request("PUT", f"/api/config/dns/hosts/{quote(f'{ip} {hostname}')}")
+
+    def delete_dns_host(self, entry: str) -> dict:
+        """entry is the exact stored string, e.g. '192.168.1.50 famboard.home'."""
+        return self._request("DELETE", f"/api/config/dns/hosts/{quote(entry)}")
 
     def queries(self, since_ts: float, until_ts: float | None = None,
                 page_size: int = 10000, max_rows: int = 500000) -> Iterator[dict]:
