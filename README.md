@@ -80,9 +80,9 @@ aggiorna i dati dal Pi-hole ogni `POLL_INTERVAL` secondi.
 Description=famboard
 After=network.target
 [Service]
-WorkingDirectory=/opt/piHole
-EnvironmentFile=/opt/piHole/.env
-ExecStart=/opt/piHole/.venv/bin/uvicorn famboard.web.app:app --host 0.0.0.0 --port 8080
+WorkingDirectory=/opt/famBoard
+EnvironmentFile=/opt/famBoard/.env
+ExecStart=/opt/famBoard/.venv/bin/uvicorn famboard.web.app:app --host 0.0.0.0 --port 8080
 Restart=always
 [Install]
 WantedBy=multi-user.target
@@ -210,7 +210,7 @@ password).
   — esegue `scripts/run_tests_hook.sh` dopo ogni Edit/Write di file `.py`:
   ```json
   { "hooks": { "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit",
-    "hooks": [ { "type": "command", "command": "bash /opt/piHole/scripts/run_tests_hook.sh", "timeout": 120 } ] } ] } }
+    "hooks": [ { "type": "command", "command": "bash /opt/famBoard/scripts/run_tests_hook.sh", "timeout": 120 } ] } ] } }
   ```
 - *Git*: `ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit` — blocca il
   commit se i test falliscono.
