@@ -33,14 +33,18 @@ Pi-hole (192.168.1.46)  --REST API-->  famboard
 sudo ./setup.sh
 ```
 
-L'installer: crea il virtualenv e installa le dipendenze; **cerca il Pi-hole**
-(1. scansione della rete locale; 2. se assente, verifica se Pi-hole è installato
-su questo stesso server; 3. altrimenti chiede l'indirizzo IP); chiede e **verifica
-la password** del Pi-hole (Pi-hole v6 usa solo una password, nessuno userid);
+L'installer: crea il virtualenv e installa le dipendenze; **gestisce il Pi-hole**
+— chiede se ce l'hai già o se vuoi **installarlo ora** su questo server (in tal
+caso lancia l'installer ufficiale di Pi-hole e ne imposta la password). Se ce
+l'hai già, lo **cerca** (1. scansione della rete locale; 2. se assente, verifica
+se Pi-hole è installato su questo stesso server; 3. altrimenti chiede l'indirizzo
+IP); chiede e **verifica la password** del Pi-hole (Pi-hole v6 usa solo una
+password, nessuno userid);
 scrive `.env` (generando una password per la dashboard); inizializza il DB,
 scarica le liste categorie, e installa/avvia il servizio systemd + il timer dei
 report. Variabili `PIHOLE_URL`/`PIHOLE_PASSWORD`/`APP_PASSWORD` preimpostate
-nell'ambiente rendono l'installazione non interattiva.
+nell'ambiente rendono l'installazione non interattiva (`INSTALL_PIHOLE=1` forza
+l'installazione di Pi-hole in modo non interattivo).
 
 **Nome di rete:** il setup registra sul Pi-hole il record DNS locale
 **`famboard.home`** → IP del server e attiva un proxy systemd sulla porta 80

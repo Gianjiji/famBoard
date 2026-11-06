@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # famboard installer — sets up the app from scratch.
 #
-# Pi-hole discovery order:
-#   1) scan the local network for a Pi-hole (v6 API);
-#   2) if none, check whether Pi-hole is installed on THIS server;
-#   3) otherwise ask for the Pi-hole IP + password (+ userid if ever needed).
+# Pi-hole: the installer first asks whether you already have Pi-hole or want to
+# install it now on this server.
+#   - install now  -> runs the official Pi-hole installer, then uses 127.0.0.1;
+#   - already have  -> discovery: 1) scan the local network for a Pi-hole (v6
+#     API); 2) check whether Pi-hole is installed on THIS server; 3) otherwise
+#     ask for the Pi-hole IP.
 #
 # Non-interactive use: preset PIHOLE_URL / PIHOLE_PASSWORD (and optionally
-# APP_PASSWORD) in the environment and the prompts are skipped.
+# APP_PASSWORD) in the environment and the prompts are skipped. Force the
+# install path non-interactively with INSTALL_PIHOLE=1.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -73,6 +76,32 @@ verify_password() {  # $1 url, $2 password -> 0 if valid
         | grep -q '"valid":true'
 }
 
+# Install Pi-hole from the official installer and set a known API password.
+# On success sets PH_URL (and usually PH_PASS). Returns non-zero on failure.
+install_pihole() {
+    if [ "$(id -u)" != 0 ]; then
+        err "L'installazione di Pi-hole richiede privilegi root (sudo)."; return 1
+    fi
+    need curl || { err "curl non trovato: impossibile scaricare l'installer Pi-hole."; return 1; }
+    say "Installazione di Pi-hole tramite l'installer ufficiale (install.pi-hole.net)..."
+    if ! (curl -sSL https://install.pi-hole.net | bash); then
+        err "Installer di Pi-hole non riuscito."; return 1
+    fi
+    need pihole || { err "Pi-hole non risulta installato dopo l'installer."; return 1; }
+    PH_URL="https://127.0.0.1"
+    local newpw="${PIHOLE_PASSWORD:-}"
+    if [ -z "$newpw" ]; then
+        read -rsp "Imposta una password per Pi-hole (vuoto = generane una): " newpw; echo
+        [ -z "$newpw" ] && newpw="$(python3 -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(16)))')"
+    fi
+    if pihole setpassword "$newpw" >/dev/null 2>&1; then
+        PH_PASS="$newpw"; say "Pi-hole installato e password impostata."
+    else
+        warn "Pi-hole installato, ma non ho impostato la password: te la chiederò ora."
+    fi
+    return 0
+}
+
 # =============================================================================
 say "Installazione famboard in $APP_DIR"
 
@@ -82,8 +111,27 @@ if [ ! -d .venv ]; then say "Creazione virtualenv..."; python3 -m venv .venv; fi
 say "Installazione dipendenze..."; .venv/bin/pip install --quiet --upgrade pip >/dev/null
 .venv/bin/pip install --quiet -r requirements.txt
 
-# 2) Discover Pi-hole --------------------------------------------------------
+# 2) Pi-hole: already installed, or install it now? --------------------------
 PH_URL="${PIHOLE_URL:-}"
+PH_PASS="${PIHOLE_PASSWORD:-}"
+if [ -z "$PH_URL" ]; then
+    WANT_INSTALL=0
+    if [ "${INSTALL_PIHOLE:-0}" = 1 ]; then
+        WANT_INSTALL=1
+    elif pihole_installed_locally; then
+        say "Pi-hole risulta già installato su questo server."
+    else
+        printf '\n'
+        say "Pi-hole è il motore DNS su cui si appoggia famboard."
+        read -rp "Hai già Pi-hole, o vuoi installarlo ora su questo server? [G=ho già Pi-hole / i=installa] " ANS
+        case "$ANS" in i|I|install*) WANT_INSTALL=1;; esac
+    fi
+    if [ "$WANT_INSTALL" = 1 ]; then
+        install_pihole || warn "Installazione saltata: cerco un Pi-hole esistente."
+    fi
+fi
+
+# Discovery (only if we still don't have a Pi-hole URL).
 if [ -z "$PH_URL" ]; then
     say "Ricerca del Pi-hole nella rete..."
     if PH_URL="$(scan_network)"; then
@@ -99,7 +147,6 @@ if [ -z "$PH_URL" ]; then
 fi
 
 # 3) Password (Pi-hole v6 uses a password only; no userid) -------------------
-PH_PASS="${PIHOLE_PASSWORD:-}"
 if [ -n "${PIHOLE_USER:-}" ]; then
     warn "Pi-hole non usa uno userid per l'API: ignoro PIHOLE_USER='$PIHOLE_USER'."
 fi
