@@ -89,13 +89,22 @@ install_pihole() {
     fi
     need pihole || { err "Pi-hole non risulta installato dopo l'installer."; return 1; }
     PH_URL="https://127.0.0.1"
-    local newpw="${PIHOLE_PASSWORD:-}"
+    local newpw="${PIHOLE_PASSWORD:-}" generated=0
     if [ -z "$newpw" ]; then
-        read -rsp "Imposta una password per Pi-hole (vuoto = generane una): " newpw; echo
-        [ -z "$newpw" ] && newpw="$(python3 -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(16)))')"
+        read -rsp "Imposta una password per Pi-hole (vuoto = generane una automaticamente): " newpw; echo
+        if [ -z "$newpw" ]; then
+            newpw="$(python3 -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(16)))')"
+            generated=1
+        fi
     fi
+    # Set it as the Pi-hole admin/API password, then hand it to the rest of the
+    # installer so it lands in .env (PIHOLE_PASSWORD) for the famboard API client.
     if pihole setpassword "$newpw" >/dev/null 2>&1; then
-        PH_PASS="$newpw"; say "Pi-hole installato e password impostata."
+        PH_PASS="$newpw"
+        say "Pi-hole installato. Password amministratore impostata e salvata in .env."
+        if [ "$generated" = 1 ]; then
+            say "Password Pi-hole generata (serve anche per il pannello admin): $newpw"
+        fi
     else
         warn "Pi-hole installato, ma non ho impostato la password: te la chiederò ora."
     fi
