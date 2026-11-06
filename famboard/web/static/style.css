@@ -131,6 +131,10 @@ tr.acked { opacity: .45; }
 .lvtag.lv-watch { background: var(--panel2); color: var(--muted); }
 tr.lv-high td { background: rgba(240, 62, 62, .05); }
 
+.kidlist { list-style: none; margin: 0 0 14px; padding: 0; }
+.kidlist li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.kidlist label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+
 .ok-dot, .err-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
 .ok-dot { background: var(--ok); box-shadow: 0 0 6px rgba(81, 207, 102, .55); }
 .err-dot { background: var(--danger); box-shadow: 0 0 6px rgba(240, 62, 62, .55); }

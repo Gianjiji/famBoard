@@ -73,12 +73,37 @@ class FakePihole:
         self.regex = []
         self.restarts = 0
         self.net_devices = []
+        self.adlists = []
+        self.gravity_runs = 0
 
     def network_devices(self, max_devices=999, max_addresses=50):
         return list(self.net_devices)
 
     def delete_network_device(self, device_id):
         self.net_devices = [d for d in self.net_devices if d["id"] != device_id]
+
+    def delete_group(self, name):
+        self.groups = [g for g in self.groups if g["name"] != name]
+
+    def delete_regex_deny(self, domain):
+        self.regex = [r for r in self.regex if r["domain"] != domain]
+
+    def list_adlists(self):
+        return list(self.adlists)
+
+    def add_adlist(self, address, groups, comment="famboard"):
+        self.adlists.append({"address": address, "groups": groups, "comment": comment})
+
+    def update_adlist(self, address, groups, comment="famboard"):
+        for a in self.adlists:
+            if a["address"] == address:
+                a["groups"], a["comment"] = groups, comment
+
+    def delete_adlist(self, address):
+        self.adlists = [a for a in self.adlists if a["address"] != address]
+
+    def run_gravity(self):
+        self.gravity_runs += 1
 
     def list_groups(self):
         return self.groups

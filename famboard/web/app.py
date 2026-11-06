@@ -19,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from .. import analytics, attention, control, db, devices as devmod, ingest, report, taxonomy
+from .. import (analytics, attention, control, db, devices as devmod, ingest,
+                kidsblock, report, taxonomy)
 from ..config import settings
 from ..pihole import PiholeClient
 
@@ -475,9 +476,24 @@ def person_detail(request: Request, pid: int, window: str = "7d"):
                    timeline=_timeline(conn, since, window, macs=macs),
                    hourly=analytics.hourly_distribution(conn, since, macs=macs),
                    topdom=analytics.top_domains(conn, since, macs=macs, limit=15))
+        if person["kind"] == "minor":
+            ctx["kids_catalog"] = kidsblock.catalog()
+            ctx["kids_selected"] = kidsblock.selected(conn, pid)
+            enf = conn.execute("SELECT value FROM meta WHERE key='enforce'").fetchone()
+            ctx["enforce_on"] = bool(enf and enf["value"] == "1")
     finally:
         conn.close()
     return templates.TemplateResponse(request, "person.html", ctx)
+
+
+@app.post("/person/{pid}/kids")
+def person_kids(pid: int, lists: list[str] = Form(default=[])):
+    conn = db.connect(settings.db_path)
+    try:
+        kidsblock.set_selection(conn, pid, lists)
+    finally:
+        conn.close()
+    return RedirectResponse(f"/person/{pid}#kids", status_code=303)
 
 
 # -- alerts ----------------------------------------------------------------

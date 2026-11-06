@@ -154,3 +154,30 @@ def test_attention_page_and_report_button(client):
     # force a report (no webhook configured in tests -> decided-to-send, no channel)
     r = client.post("/attention/report-now", follow_redirects=False)
     assert r.status_code == 303 and "/attention" in r.headers["location"]
+
+
+# --- functional: kids blocklist panel on a minor's page ----------------
+def test_minor_kids_blocklist_panel_and_save(client):
+    from famboard import kidsblock
+    conn = db.connect(settings.db_path)
+    conn.execute("INSERT INTO person(name,kind) VALUES('KidPanel','minor')")
+    pid = conn.execute("SELECT id FROM person WHERE name='KidPanel'").fetchone()["id"]
+    conn.execute("INSERT INTO device(mac,person_id) VALUES('aa:bb:cc:dd:ee:80',?)", (pid,))
+    conn.commit(); conn.close()
+
+    page = client.get(f"/person/{pid}")
+    assert page.status_code == 200 and "Blocklist per minori" in page.text
+
+    r = client.post(f"/person/{pid}/kids", data={"lists": ["porn", "gambling"]},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    conn = db.connect(settings.db_path)
+    assert kidsblock.selected(conn, pid) == {"porn", "gambling"}
+    conn.close()
+
+    # an adult must NOT show the panel
+    conn = db.connect(settings.db_path)
+    conn.execute("INSERT INTO person(name,kind) VALUES('AdultNoPanel','adult')")
+    apid = conn.execute("SELECT id FROM person WHERE name='AdultNoPanel'").fetchone()["id"]
+    conn.commit(); conn.close()
+    assert "Blocklist per minori" not in client.get(f"/person/{apid}").text

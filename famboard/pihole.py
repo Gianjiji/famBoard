@@ -164,6 +164,27 @@ class PiholeClient:
         cache, so a new block (or unblock) takes effect immediately."""
         return self._request("POST", "/api/action/restartdns")
 
+    # subscribed blocklists (adlists) + gravity rebuild
+    def list_adlists(self) -> list[dict]:
+        return self._request("GET", "/api/lists?type=block").get("lists", [])
+
+    def add_adlist(self, address: str, groups: list[int], comment: str = "famboard") -> dict:
+        return self._request("POST", "/api/lists",
+                             json={"address": address, "type": "block",
+                                   "comment": comment, "groups": groups})
+
+    def update_adlist(self, address: str, groups: list[int], comment: str = "famboard") -> dict:
+        return self._request("PUT", f"/api/lists/{quote(address, safe='')}?type=block",
+                             json={"comment": comment, "groups": groups, "enabled": True})
+
+    def delete_adlist(self, address: str) -> dict:
+        return self._request("DELETE", f"/api/lists/{quote(address, safe='')}?type=block")
+
+    def run_gravity(self) -> dict:
+        """Rebuild gravity so newly-subscribed blocklists take effect. Slow
+        (seconds to minutes); call only when adlists actually changed."""
+        return self._request("POST", "/api/action/gravity")
+
     # -- lifecycle ---------------------------------------------------------
     def close(self) -> None:
         try:

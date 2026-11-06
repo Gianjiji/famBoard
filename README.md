@@ -159,6 +159,12 @@ viene riallineato.
   "consenti SOLO negli orari", es. Netflix 16–17), e **quota giornaliera** (es.
   "Facebook 1h/giorno", "Videogiochi 1h/giorno" — stima dal tempo di utilizzo,
   azzerata a mezzanotte). Più blocco/sblocco rapido per persona.
+- **Blocklist per minori**: nella scheda di una persona **minorenne** si possono
+  selezionare blocklist curate (contenuti per adulti, azzardo, disinformazione,
+  social — liste StevenBlack). Vengono sottoscritte come adlist del Pi-hole in un
+  gruppo dedicato `famboard-kids-<id>` e applicate **solo ai dispositivi di quel
+  minore**. Richiedono l'applicazione del controllo attiva; la prima attivazione
+  ricostruisce la gravity del Pi-hole.
 - **Avvisi**: generati quando una categoria sensibile viene *effettivamente
   raggiunta* (non bloccata dal Pi-hole), con acknowledge e notifiche webhook.
 - **Profilazione del disagio**: categorie "critiche" (segnali di

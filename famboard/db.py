@@ -127,6 +127,15 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Kids blocklists a minor has opted into. list_key is a catalog key
+-- (famboard/kidsblock.py); the lists apply ONLY to that person's devices.
+CREATE TABLE IF NOT EXISTS kid_list (
+    person_id  INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+    list_key   TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    PRIMARY KEY (person_id, list_key)
+);
 """
 
 

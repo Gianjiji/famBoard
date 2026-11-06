@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import sqlite3
 
-from . import control
+from . import control, kidsblock
 from .taxonomy import CURATED
 
 BLOCKALL_GROUP = "famboard-blockall"
@@ -33,8 +33,10 @@ def _regex_for(domain: str) -> str:
 
 
 def desired_client_groups(conn: sqlite3.Connection, group_ids: dict,
+                          kids: dict | None = None,
                           now_ts: float | None = None) -> dict[str, list[int]]:
-    """{mac: [group ids]} for every MAC that has an enabled rule."""
+    """{mac: [group ids]} for every MAC that has an enabled control rule or a
+    kids blocklist. Kids groups are added on top of any category blocking."""
     desired = control.desired_state(conn, now_ts)
     managed = {r["mac"] for r in conn.execute(
         "SELECT DISTINCT mac FROM control_rule WHERE enabled = 1").fetchall()}
@@ -51,6 +53,19 @@ def desired_client_groups(conn: sqlite3.Connection, group_ids: dict,
             out[mac] = sorted(gids)
         else:
             out[mac] = [0]  # has rules but none active now -> allowed
+
+    # layer the per-minor kids group onto that minor's devices
+    kids_gids = group_ids.get("kids", {})
+    for pid, info in (kids or {}).items():
+        gid = kids_gids.get(pid)
+        if not gid:
+            continue
+        for mac in info["macs"]:
+            if out.get(mac) == [group_ids["blockall"]]:
+                continue  # already fully offline
+            base = set(out.get(mac) or [0])
+            base.update({0, gid})
+            out[mac] = sorted(base)
     return out
 
 
@@ -73,7 +88,29 @@ def _ensure_regex(client, existing: list[dict], pattern: str, gid: int) -> None:
     existing.append({"domain": pattern, "groups": [gid]})
 
 
-def ensure_groups(client, needed_cats: set[str]) -> dict:
+def _ensure_kids(client, kids: dict, groups: dict, kids_ids: dict) -> bool:
+    """Ensure a group per minor with its selected blocklists (adlists)
+    subscribed. Returns True if adlist membership changed (gravity needed)."""
+    existing = {a.get("address"): a for a in client.list_adlists()}
+    want: dict[str, set[int]] = {}
+    for pid, info in kids.items():
+        gid = _ensure_group(client, groups, info["group"],
+                            f"famboard: blocklist minore {pid}")
+        kids_ids[pid] = gid
+        for url in info["urls"]:
+            want.setdefault(url, set()).add(gid)
+    gravity = False
+    for url, gids in want.items():
+        cur = existing.get(url)
+        if cur is None:
+            client.add_adlist(url, sorted(gids)); gravity = True
+        elif not gids <= set(cur.get("groups") or []):
+            client.update_adlist(url, sorted(set(cur.get("groups") or []) | gids))
+            gravity = True
+    return gravity
+
+
+def ensure_groups(client, needed_cats: set[str], kids: dict | None = None) -> dict:
     groups = {g["name"]: g["id"] for g in client.list_groups()}
     regex = client.list_regex_deny()
     blockall = _ensure_group(client, groups, BLOCKALL_GROUP, "famboard: blocca tutta la rete")
@@ -84,7 +121,9 @@ def ensure_groups(client, needed_cats: set[str]) -> dict:
         for dom in _cat_domains(cat):
             _ensure_regex(client, regex, _regex_for(dom), gid)
         cat_ids[cat] = gid
-    return {"blockall": blockall, "cat": cat_ids}
+    kids_ids: dict[int, int] = {}
+    gravity = _ensure_kids(client, kids or {}, groups, kids_ids) if kids else False
+    return {"blockall": blockall, "cat": cat_ids, "kids": kids_ids, "gravity": gravity}
 
 
 def reconcile(conn: sqlite3.Connection, client, now_ts: float | None = None) -> dict:
@@ -99,8 +138,9 @@ def reconcile(conn: sqlite3.Connection, client, now_ts: float | None = None) -> 
     control.retire_expired(conn, now_ts)
     needed_cats = {r["target"] for r in conn.execute(
         "SELECT DISTINCT target FROM control_rule WHERE enabled = 1 AND target != 'all'").fetchall()}
-    group_ids = ensure_groups(client, needed_cats)
-    by_mac = desired_client_groups(conn, group_ids, now_ts)
+    kids = kidsblock.desired(conn)
+    group_ids = ensure_groups(client, needed_cats, kids)
+    by_mac = desired_client_groups(conn, group_ids, kids, now_ts)
 
     mac_to_ips: dict[str, list[str]] = {}
     for r in conn.execute("SELECT ip, mac FROM ip_map").fetchall():
@@ -133,27 +173,41 @@ def reconcile(conn: sqlite3.Connection, client, now_ts: float | None = None) -> 
             client.delete_client(key)
             changed += 1
 
+    if group_ids.get("gravity"):
+        try:
+            client.run_gravity()  # make newly-subscribed kids blocklists bite
+        except Exception as exc:
+            print(f"[enforce] gravity failed: {exc}")
     if changed:
         try:
             client.restart_dns()
         except Exception as exc:
             print(f"[enforce] restart_dns failed: {exc}")
 
-    return {"blocking_ips": len(desired_ip), "changed": changed}
+    return {"blocking_ips": len(desired_ip), "changed": changed,
+            "kids_groups": len(group_ids.get("kids", {}))}
 
 
 def teardown(client) -> dict:
     """Remove every Pi-hole artifact famboard created (for a clean uninstall)."""
-    removed = {"clients": 0, "regex": 0, "groups": 0}
+    removed = {"clients": 0, "regex": 0, "adlists": 0, "groups": 0}
     for c in client.list_clients():
         if c.get("comment") == COMMENT:
             client.delete_client(c["client"]); removed["clients"] += 1
     for d in client.list_regex_deny():
         if d.get("comment") == COMMENT or d.get("domain") == BLOCKALL_REGEX:
             client.delete_regex_deny(d["domain"]); removed["regex"] += 1
+    for a in client.list_adlists():
+        if a.get("comment") == COMMENT:
+            client.delete_adlist(a["address"]); removed["adlists"] += 1
     for g in client.list_groups():
         if str(g.get("name", "")).startswith("famboard"):
             client.delete_group(g["name"]); removed["groups"] += 1
+    if removed["adlists"]:
+        try:
+            client.run_gravity()
+        except Exception:
+            pass
     if any(removed.values()):
         try:
             client.restart_dns()

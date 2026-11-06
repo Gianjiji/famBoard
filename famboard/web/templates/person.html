@@ -36,6 +36,30 @@
 </section>
 {% endif %}
 
+{% if person.kind=='minor' and kids_catalog %}
+<section class="card control" id="kids">
+  <h2>🧒 Blocklist per minori</h2>
+  <p class="muted small">Le liste selezionate vengono bloccate <b>solo sui dispositivi di {{ person.name }}</b>
+     (gruppo dedicato sul Pi-hole). Hanno effetto quando l'<a href="/status">applicazione del controllo</a>
+     è attiva; la prima attivazione ricostruisce la gravity del Pi-hole e può richiedere qualche minuto.</p>
+  {% if not enforce_on %}<p class="warnbox small">⚠️ Applicazione del controllo disattivata: le scelte vengono salvate ma non imposte finché non la attivi in <a href="/status">Stato</a>.</p>{% endif %}
+  <form method="post" action="/person/{{ person.id }}/kids">
+    <ul class="kidlist">
+    {% for l in kids_catalog %}
+      <li>
+        <label>
+          <input type="checkbox" name="lists" value="{{ l.key }}" {{ 'checked' if l.key in kids_selected }}>
+          <b>{{ l.label }}</b>
+        </label>
+        <div class="muted small">{{ l.desc }}</div>
+      </li>
+    {% endfor %}
+    </ul>
+    <button>Salva blocklist</button>
+  </form>
+</section>
+{% endif %}
+
 {% if sensitive %}
 <section class="card alert">
   <h2>⚠️ Categorie sensibili</h2>
