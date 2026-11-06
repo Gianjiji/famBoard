@@ -152,6 +152,30 @@ se almeno un membro è recente; lo storico query e gli avvisi restano. Senza
 `--yes` è una prova a vuoto (mostra cosa verrebbe rimosso). Al termine il CSV
 viene riallineato.
 
+## Backup e migrazione
+
+Tutto lo stato "prezioso" vive in `data/` (database SQLite, **incluso l'indice
+domini→categoria** da ~5M voci, più la chiave di sessione) e in `.env`: per
+spostare famboard su un container dedicato non serve reinstallare né
+riclassificare.
+
+```bash
+# sul vecchio host — crea un archivio (snapshot a caldo, servizio attivo):
+./scripts/backup.sh                 # -> famboard-backup-<data>.tar.gz
+
+# sul nuovo container:
+git clone <repo> /opt/famBoard && cd /opt/famBoard
+# copia qui l'archivio, poi:
+sudo ./scripts/restore.sh famboard-backup-<data>.tar.gz
+```
+
+`restore.sh` ripristina DB, `.env`, chiave di sessione e censimento, poi lancia
+`setup.sh` che **riusa il `.env` ripristinato** (nessuna riconfigurazione) e
+**salta il download delle categorie** se l'indice è già nel DB. Il backup usa lo
+snapshot online di SQLite (consistente anche a servizio acceso); `--no-service`
+ripristina i dati senza toccare systemd. Nel DB c'è già l'indice, quindi la
+migrazione non riscarica i ~5M domini.
+
 ## Funzionalità della dashboard
 
 - **Panoramica** con statistiche, grafico categorie, andamento nel tempo,

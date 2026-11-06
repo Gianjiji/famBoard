@@ -127,6 +127,22 @@ if [ ! -d .venv ]; then say "Creazione virtualenv..."; python3 -m venv .venv; fi
 say "Installazione dipendenze..."; .venv/bin/pip install --quiet --upgrade pip >/dev/null
 .venv/bin/pip install --quiet -r requirements.txt
 
+# Reuse an existing .env (e.g. after restoring a backup) instead of re-asking
+# everything. Skips Pi-hole discovery, password, notifications and .env writing.
+REUSE_ENV=0
+if [ -f .env ]; then
+    if [ -t 0 ]; then
+        read -rp "Trovato un .env esistente: riutilizzo la configurazione salvata? [S/n] " A
+        case "$A" in n|N) REUSE_ENV=0;; *) REUSE_ENV=1;; esac
+    else
+        REUSE_ENV=1
+    fi
+fi
+
+if [ "$REUSE_ENV" = 1 ]; then
+    say "Riuso la configurazione esistente in .env (nessuna riconfigurazione)."
+else
+
 # 2) Pi-hole: already installed, or install it now? --------------------------
 PH_URL="${PIHOLE_URL:-}"
 PH_PASS="${PIHOLE_PASSWORD:-}"
@@ -284,6 +300,11 @@ AI_SUMMARY_MODEL=$AI_MODEL
 AI_SUMMARY_KEY=$AI_KEY
 EOF
 umask 022
+fi  # end of the "configure .env" block (skipped when reusing an existing .env)
+
+# Values needed by the messages below (work whether .env was written or reused).
+PH_URL="$(sed -n 's/^PIHOLE_URL=//p' .env 2>/dev/null | head -1)"
+APP_PASS="$(sed -n 's/^APP_PASSWORD=//p' .env 2>/dev/null | head -1)"
 
 # 7) DB + category lists -----------------------------------------------------
 say "Inizializzazione database e categorie..."
@@ -293,17 +314,30 @@ if [ -f "${CENSUS_CSV:-censimentoMAC/census.csv}" ]; then
     say "Importazione censimento dispositivi..."
     .venv/bin/python -m famboard.cli census-sync || warn "Censimento non importato."
 fi
-if [ ! -f data/categories/blacklists.tar.gz ]; then
+# Skip the (slow) UT1 download+build if the DB already carries a domain index
+# (e.g. restored from a backup).
+HAVE_INDEX="$(.venv/bin/python -c 'import sqlite3;from famboard.config import settings
+try:
+    print(sqlite3.connect(str(settings.db_path)).execute("SELECT COUNT(*) FROM domain_category").fetchone()[0])
+except Exception: print(0)' 2>/dev/null || echo 0)"
+if [ "${HAVE_INDEX:-0}" -gt 0 ]; then
+    say "Indice domini→categoria già presente ($HAVE_INDEX voci): salto il download."
+elif [ ! -f data/categories/blacklists.tar.gz ]; then
     say "Scaricamento liste categorie (UT1)..."
     mkdir -p data/categories
     curl -s --max-time 120 -o data/categories/blacklists.tar.gz \
         "https://dsi.ut-capitole.fr/blacklists/download/blacklists.tar.gz" \
         && .venv/bin/python -m famboard.cli build-categories data/categories/blacklists.tar.gz \
         || warn "Liste categorie non scaricate: potrai farlo dopo con build-categories."
+else
+    .venv/bin/python -m famboard.cli build-categories data/categories/blacklists.tar.gz \
+        || warn "Costruzione indice categorie non riuscita."
 fi
 
 # 8) systemd service + weekly report timer -----------------------------------
-if need systemctl && [ "$(id -u)" = 0 ]; then
+if [ "${FAMBOARD_NO_SERVICE:-0}" = 1 ]; then
+    say "FAMBOARD_NO_SERVICE=1: salto l'installazione del servizio systemd."
+elif need systemctl && [ "$(id -u)" = 0 ]; then
     say "Installazione servizio systemd..."
     cat > /etc/systemd/system/famboard.service <<EOF
 [Unit]
@@ -368,7 +402,9 @@ fi
 # 9) nome di rete (es. http://famboard.home) ---------------------------------
 FAMBOARD_HOST="${FAMBOARD_HOST:-famboard.home}"
 IP_LOCAL="$(hostname -I 2>/dev/null | awk '{print $1}')"
-if [ -n "$FAMBOARD_HOST" ] && [ -n "$IP_LOCAL" ]; then
+if [ "${FAMBOARD_NO_SERVICE:-0}" = 1 ]; then
+    :  # skip DNS registration in no-service mode
+elif [ -n "$FAMBOARD_HOST" ] && [ -n "$IP_LOCAL" ]; then
     say "Registrazione DNS locale '$FAMBOARD_HOST' sul Pi-hole..."
     FAMBOARD_HOST="$FAMBOARD_HOST" IP_LOCAL="$IP_LOCAL" .venv/bin/python - <<'PY' \
         || warn "Record DNS non registrato: aggiungilo dal pannello Pi-hole (Local DNS)."
