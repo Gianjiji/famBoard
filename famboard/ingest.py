@@ -175,9 +175,9 @@ def backfill(conn: sqlite3.Connection, client: PiholeClient, days: int,
 def notify_alerts(conn: sqlite3.Connection, max_age_s: int = 3600) -> int:
     """POST recent, un-notified alerts for minors to the webhook, then mark done."""
     rows = conn.execute(
-        "SELECT a.id, a.ts, a.domain, a.category_key, a.risk_level, "
-        "       COALESCE(d.label, a.mac) device, "
-        "       COALESCE(p.name, 'dispositivo non assegnato') person, "
+        "SELECT a.id, a.ts, a.domain, a.category_key, a.risk_level, a.mac, "
+        "       COALESCE(d.label, a.mac) device, d.device_type, "
+        "       COALESCE(p.name, 'non assegnato') person, "
         "       k.label cat_label, COALESCE(k.critical,0) critical "
         "FROM alert a "
         "LEFT JOIN device d ON d.mac = a.mac "
@@ -191,8 +191,9 @@ def notify_alerts(conn: sqlite3.Connection, max_age_s: int = 3600) -> int:
             try:
                 title = ("famboard - possibile disagio" if r["critical"]
                          else "famboard - avviso minore")
-                msg = (f"{r['person']} ({r['device']}) ha raggiunto "
-                       f"'{r['cat_label']}': {r['domain']}")
+                dtype = f", {r['device_type']}" if r["device_type"] else ""
+                msg = (f"{r['person']} — {r['device']} [{r['mac']}{dtype}]\n"
+                       f"ha raggiunto '{r['cat_label']}': {r['domain']}")
                 if r["critical"]:
                     msg += "\nValuta un confronto sereno con la persona."
                 httpx.post(settings.webhook_url, content=msg.encode("utf-8"),

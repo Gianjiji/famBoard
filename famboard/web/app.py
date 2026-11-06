@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -546,6 +546,20 @@ def attention_page(request: Request, days: int = attention.WINDOW_DAYS, sent: st
     finally:
         conn.close()
     return templates.TemplateResponse(request, "attention.html", ctx)
+
+
+@app.get("/attention/report.pdf")
+def attention_report_pdf():
+    from .. import report_pdf
+    conn = db.connect(settings.db_path)
+    try:
+        rep = report.build_attention(conn)
+    finally:
+        conn.close()
+    pdf = report_pdf.render_attention_pdf(rep)
+    fname = f"famboard-attenzione-{datetime.now().strftime('%Y%m%d-%H%M')}.pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @app.post("/attention/report-now")

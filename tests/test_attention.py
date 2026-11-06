@@ -92,3 +92,30 @@ def test_dispatch_nothing_when_quiet(conn):
     _hits(conn, "aa:bb:cc:00:00:08", "social", n=5)  # not sensitive
     res = report.dispatch_attention(conn, now=NOW)
     assert res["sent"] is False and res["flagged"] == 0
+
+
+def test_report_text_includes_mac_and_owner(conn):
+    _mk_person(conn, "Dino", "minor", "aa:bb:cc:00:00:20")
+    conn.execute("UPDATE device SET label='Tablet Dino', device_type='Tablet' "
+                 "WHERE mac='aa:bb:cc:00:00:20'")
+    conn.commit()
+    _hits(conn, "aa:bb:cc:00:00:20", "adult", n=50, domains=12, spread_days=7)
+    rep = report.build_attention(conn, now=NOW)
+    txt = report.render_attention_text(rep)
+    assert "aa:bb:cc:00:00:20" in txt and "Tablet Dino" in txt
+
+
+def test_attention_pdf_is_valid_and_mentions_subject(conn):
+    from famboard import report_pdf
+    _mk_person(conn, "Pdf Kid", "minor", "aa:bb:cc:00:00:21")
+    _hits(conn, "aa:bb:cc:00:00:21", "adult", n=50, domains=12, spread_days=7)
+    rep = report.build_attention(conn, now=NOW)
+    pdf = report_pdf.render_attention_pdf(rep)
+    assert pdf[:4] == b"%PDF" and len(pdf) > 1000
+
+
+def test_attention_pdf_empty_is_valid(conn):
+    from famboard import report_pdf
+    rep = report.build_attention(conn, now=NOW)
+    pdf = report_pdf.render_attention_pdf(rep)
+    assert pdf[:4] == b"%PDF"

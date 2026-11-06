@@ -3,12 +3,15 @@
 {% block body %}
 <div class="pagehead">
   <h1>Situazioni da attenzionare</h1>
-  <form method="post" action="/attention/report-now">
-    <button class="danger" {{ 'disabled' if not webhook_set }}
-            title="{{ 'Configura WEBHOOK_URL o SMTP per inviare' if not webhook_set }}">
-      Genera report ora
-    </button>
-  </form>
+  <div class="rowform">
+    <a class="btn" href="/attention/report.pdf">Scarica report PDF</a>
+    <form method="post" action="/attention/report-now">
+      <button class="ghost" {{ 'disabled' if not webhook_set }}
+              title="{{ 'Configura WEBHOOK_URL o SMTP per inviare' if not webhook_set }}">
+        Invia ora via notifica
+      </button>
+    </form>
+  </div>
 </div>
 
 {% if sent == 'sent' %}<div class="card ok"><p>Report inviato.</p></div>

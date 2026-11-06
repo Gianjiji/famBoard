@@ -161,6 +161,10 @@ def render_attention_text(report: dict, flagged: list[dict] | None = None) -> st
         lines.append("● " + _subject_line(s))
         for r in s["reasons"]:
             lines.append("   · " + r)
+        owner = s["name"] if s["kind"] == "person" else "non assegnato"
+        for d in s.get("devices", []):
+            extra = " · ".join(v for v in (d.get("device_type"), owner) if v)
+            lines.append(f"   · {d['label']} [{d['mac']}]" + (f" — {extra}" if extra else ""))
         lines.append("")
     lines.append("Il DNS rivela i domini contattati, non i contenuti: usa questo "
                  "come spunto per un confronto, non come prova.")

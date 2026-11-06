@@ -120,6 +120,22 @@ def situation_signature(subjects: list[dict]) -> str:
     return hashlib.sha1(joined.encode()).hexdigest()[:16]
 
 
+def _subject_devices(conn: sqlite3.Connection, kind: str, sid: int) -> list[dict]:
+    """Device detail for a subject: label, MAC, vendor, type — so reports and
+    notifications can name the actual device and (for people) its owner."""
+    if kind == "person":
+        rows = conn.execute(
+            "SELECT COALESCE(label, mac) label, mac, vendor, device_type "
+            "FROM device WHERE person_id = ? AND merged_into IS NULL "
+            "ORDER BY last_seen DESC", (sid,)).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT COALESCE(label, mac) label, mac, vendor, device_type "
+            "FROM device WHERE id = ? OR merged_into = ? ORDER BY last_seen DESC",
+            (sid, sid)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def _query_subject(conn: sqlite3.Connection, macs: list[str],
                    since: float, mid: float) -> list[dict]:
     if not macs:
@@ -146,7 +162,8 @@ def score_subjects(conn: sqlite3.Connection, days: int = WINDOW_DAYS,
         if not s or s["level"] == "none":
             continue
         s.update(kind="person", id=p["id"], name=p["name"],
-                 person_kind=p["kind"], link=f"/person/{p['id']}")
+                 person_kind=p["kind"], link=f"/person/{p['id']}",
+                 owner=p["name"], devices=_subject_devices(conn, "person", p["id"]))
         s["reasons"] = _reasons(s)
         s["signature"] = _sig_one(s)
         out.append(s)
@@ -158,7 +175,8 @@ def score_subjects(conn: sqlite3.Connection, days: int = WINDOW_DAYS,
         if not s or s["level"] == "none":
             continue
         s.update(kind="device", id=d["id"], name=d["name"],
-                 person_kind=None, link=f"/device/{d['id']}")
+                 person_kind=None, link=f"/device/{d['id']}",
+                 owner=None, devices=_subject_devices(conn, "device", d["id"]))
         s["reasons"] = _reasons(s)
         s["signature"] = _sig_one(s)
         out.append(s)

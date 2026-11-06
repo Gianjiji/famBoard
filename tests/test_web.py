@@ -181,3 +181,12 @@ def test_minor_kids_blocklist_panel_and_save(client):
     apid = conn.execute("SELECT id FROM person WHERE name='AdultNoPanel'").fetchone()["id"]
     conn.commit(); conn.close()
     assert "Blocklist per minori" not in client.get(f"/person/{apid}").text
+
+
+# --- functional: attention PDF download --------------------------------
+def test_attention_pdf_download(client):
+    r = client.get("/attention/report.pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert "attachment" in r.headers.get("content-disposition", "")
+    assert r.content[:4] == b"%PDF"
