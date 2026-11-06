@@ -119,3 +119,29 @@ def test_attention_pdf_empty_is_valid(conn):
     rep = report.build_attention(conn, now=NOW)
     pdf = report_pdf.render_attention_pdf(rep)
     assert pdf[:4] == b"%PDF"
+
+
+def test_email_includes_pdf_attachment(monkeypatch):
+    import smtplib
+    from types import SimpleNamespace
+    sent = {}
+
+    class _FakeSMTP:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self): pass
+        def login(self, *a): pass
+        def send_message(self, msg): sent["msg"] = msg
+
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(report, "settings", SimpleNamespace(
+        smtp_host="smtp.local", smtp_port=587, smtp_to="a@b.c", smtp_from="f@b.c",
+        smtp_user="", smtp_pass="", smtp_tls=True))
+    res = {"email": False}
+    report._send_email("<p>ciao</p>", "oggetto", res, pdf=b"%PDF-1.4 fake",
+                       pdf_name="report.pdf")
+    assert res["email"] is True
+    parts = sent["msg"].get_payload()
+    assert any(p.get_content_type() == "application/pdf" for p in parts)
+    assert sent["msg"]["Subject"] == "oggetto"

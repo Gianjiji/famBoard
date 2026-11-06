@@ -27,8 +27,8 @@ def test_correct_login_grants_access(anon_client):
 
 # --- functional: pages render -------------------------------------------
 def test_main_pages_render(client):
-    for path in ("/", "/people", "/devices", "/alerts", "/status",
-                 "/?window=7d", "/alerts?scope=all"):
+    for path in ("/", "/people", "/devices", "/attention", "/status",
+                 "/?window=7d", "/attention?days=7"):
         assert client.get(path).status_code == 200, path
 
 
@@ -133,8 +133,8 @@ def test_login_with_non_ascii_password_fails_cleanly(anon_client):
     assert anon_client.get("/").status_code == 303   # still not authenticated
 
 
-# --- functional: attention page + force-report button ------------------
-def test_attention_page_and_report_button(client):
+# --- functional: attention page (no force-send button anymore) ---------
+def test_attention_page_lists_subject_and_has_no_send_button(client):
     import time
     conn = db.connect(settings.db_path)
     conn.execute("INSERT INTO person(name,kind) VALUES('AttnKid','minor')")
@@ -150,10 +150,11 @@ def test_attention_page_and_report_button(client):
 
     r = client.get("/attention")
     assert r.status_code == 200 and "AttnKid" in r.text
+    assert "report.pdf" in r.text and "report-now" not in r.text
 
-    # force a report (no webhook configured in tests -> decided-to-send, no channel)
-    r = client.post("/attention/report-now", follow_redirects=False)
-    assert r.status_code == 303 and "/attention" in r.headers["location"]
+    # the removed routes must be gone
+    assert client.post("/attention/report-now", follow_redirects=False).status_code == 404
+    assert client.get("/alerts", follow_redirects=False).status_code == 404
 
 
 # --- functional: kids blocklist panel on a minor's page ----------------

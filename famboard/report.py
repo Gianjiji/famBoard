@@ -9,6 +9,8 @@ import smtplib
 import sqlite3
 import time
 from datetime import datetime
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import httpx
@@ -109,11 +111,20 @@ def deliver(report: dict) -> dict:
     return result
 
 
-def _send_email(html: str, subject: str, result: dict) -> None:
+def _send_email(html: str, subject: str, result: dict,
+                pdf: bytes | None = None, pdf_name: str = "report.pdf") -> None:
+    """Send an HTML email, optionally with a PDF attachment."""
     if not (settings.smtp_host and settings.smtp_to):
         return
     try:
-        msg = MIMEText(html, "html", "utf-8")
+        if pdf is not None:
+            msg = MIMEMultipart()
+            msg.attach(MIMEText(html, "html", "utf-8"))
+            part = MIMEApplication(pdf, _subtype="pdf")
+            part.add_header("Content-Disposition", "attachment", filename=pdf_name)
+            msg.attach(part)
+        else:
+            msg = MIMEText(html, "html", "utf-8")
         msg["Subject"] = subject
         msg["From"] = settings.smtp_from or settings.smtp_user
         msg["To"] = settings.smtp_to
@@ -235,8 +246,19 @@ def _deliver_attention(report: dict, flagged: list[dict]) -> dict:
             result["webhook"] = True
         except Exception as exc:
             print(f"[attention] webhook error: {exc}")
+    # email carries the full report as a styled PDF attachment
+    pdf = None
+    if settings.smtp_host and settings.smtp_to:
+        try:
+            from . import report_pdf
+            pdf = report_pdf.render_attention_pdf(report, flagged)
+        except Exception as exc:
+            print(f"[attention] pdf render error: {exc}")
+    fname = "famboard-attenzione-" + \
+        datetime.fromtimestamp(report["generated"]).strftime("%Y%m%d-%H%M") + ".pdf"
     _send_email(render_attention_html(report, flagged),
-                "famboard — situazioni da attenzionare", result)
+                "famboard — situazioni da attenzionare", result,
+                pdf=pdf, pdf_name=fname)
     return result
 
 

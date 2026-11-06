@@ -86,8 +86,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.resolve_secret(),
 
 # -- helpers ---------------------------------------------------------------
 def _ctx(request: Request, conn, nav: str, **extra) -> dict:
-    ctx = {"request": request, "nav": nav,
-           "alert_count": analytics.open_alert_count(conn)}
+    ctx = {"request": request, "nav": nav}
     ctx.update(extra)
     return ctx
 
@@ -496,53 +495,16 @@ def person_kids(pid: int, lists: list[str] = Form(default=[])):
     return RedirectResponse(f"/person/{pid}#kids", status_code=303)
 
 
-# -- alerts ----------------------------------------------------------------
-@app.get("/alerts")
-def alerts_page(request: Request, window: str = "7d", scope: str = "minors"):
-    conn = db.connect(settings.db_path)
-    try:
-        since = analytics.since_ts(window)
-        ctx = _ctx(request, conn, "alerts", window=window, windows=list(analytics.WINDOWS),
-                   scope=scope,
-                   alerts=analytics.alerts_list(conn, since, only_minors=(scope == "minors")))
-    finally:
-        conn.close()
-    return templates.TemplateResponse(request, "alerts.html", ctx)
-
-
-@app.post("/alerts/{aid}/ack")
-def alert_ack(aid: int, window: str = Form("7d"), scope: str = Form("minors")):
-    conn = db.connect(settings.db_path)
-    try:
-        conn.execute("UPDATE alert SET acknowledged=1 WHERE id=?", (aid,))
-        conn.commit()
-    finally:
-        conn.close()
-    return RedirectResponse(f"/alerts?window={window}&scope={scope}", status_code=303)
-
-
-@app.post("/alerts/ack-all")
-def alert_ack_all(window: str = Form("7d"), scope: str = Form("minors")):
-    conn = db.connect(settings.db_path)
-    try:
-        conn.execute("UPDATE alert SET acknowledged=1 WHERE acknowledged=0")
-        conn.commit()
-    finally:
-        conn.close()
-    return RedirectResponse(f"/alerts?window={window}&scope={scope}", status_code=303)
-
-
 # -- attention -------------------------------------------------------------
 @app.get("/attention")
-def attention_page(request: Request, days: int = attention.WINDOW_DAYS, sent: str = ""):
+def attention_page(request: Request, days: int = attention.WINDOW_DAYS):
     conn = db.connect(settings.db_path)
     try:
         subjects = attention.score_subjects(conn, days=days)
         last_ts = db.get_meta(conn, "attention_sent_ts", "")
         ctx = _ctx(request, conn, "attention", subjects=subjects, days=days,
-                   auto_levels=attention.AUTO_LEVELS, sent=sent,
-                   last_sent=float(last_ts) if last_ts else None,
-                   webhook_set=bool(settings.webhook_url))
+                   auto_levels=attention.AUTO_LEVELS,
+                   last_sent=float(last_ts) if last_ts else None)
     finally:
         conn.close()
     return templates.TemplateResponse(request, "attention.html", ctx)
@@ -560,17 +522,6 @@ def attention_report_pdf():
     fname = f"famboard-attenzione-{datetime.now().strftime('%Y%m%d-%H%M')}.pdf"
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
-
-
-@app.post("/attention/report-now")
-def attention_report_now():
-    conn = db.connect(settings.db_path)
-    try:
-        res = report.dispatch_attention(conn, force=True)
-    finally:
-        conn.close()
-    flag = "sent" if res.get("sent") else "empty"
-    return RedirectResponse(f"/attention?sent={flag}", status_code=303)
 
 
 # -- status ----------------------------------------------------------------

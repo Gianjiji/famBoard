@@ -23,6 +23,13 @@ err()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; }
 
 need() { command -v "$1" >/dev/null 2>&1; }
 
+# Prompt with a default (Enter accepts it). Non-interactive -> returns default.
+ask() {  # $1 prompt, $2 default -> echoes the chosen value
+    local ans
+    if [ -t 0 ]; then read -rp "   $1 [$2]: " ans; printf '%s' "${ans:-$2}"
+    else printf '%s' "$2"; fi
+}
+
 # --- a Pi-hole v6 answers /api with a JSON carrying FTL's "took" field -------
 probe_pihole() {  # $1 = ip ; echoes base URL on success
     local ip=$1 url
@@ -169,30 +176,116 @@ else
     verify_password "$PH_URL" "$PH_PASS" || warn "Attenzione: la password preimpostata non è stata verificata."
 fi
 
-# 4) Write .env --------------------------------------------------------------
-APP_PASS="${APP_PASSWORD:-$(python3 -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(18)))')}"
+# 4) Notification channel (push via ntfy, or email) --------------------------
+NOTIFY_WEBHOOK="${WEBHOOK_URL:-}"
+NOTIFY_SMTP_HOST="${SMTP_HOST:-}"
+NOTIFY_SMTP_PORT="${SMTP_PORT:-587}"
+NOTIFY_SMTP_USER="${SMTP_USER:-}"
+NOTIFY_SMTP_PASS="${SMTP_PASS:-}"
+NOTIFY_SMTP_FROM="${SMTP_FROM:-}"
+NOTIFY_SMTP_TO="${SMTP_TO:-}"
+NOTIFY_SMTP_TLS="${SMTP_TLS:-true}"
+
+if [ -z "$NOTIFY_WEBHOOK" ] && [ -z "$NOTIFY_SMTP_HOST" ] && [ -t 0 ]; then
+    printf '\n'
+    say "Come vuoi ricevere gli avvisi di famboard?"
+    echo "   1) Notifica push sul telefono (consigliato, tramite l'app ntfy)"
+    echo "   2) Email"
+    echo "   3) Nessuna per ora"
+    read -rp "Scelta [1/2/3]: " NCH
+    case "$NCH" in
+      1)
+        printf '\n'
+        say "Installa l'app gratuita \"ntfy\" sul telefono:"
+        echo "   - Android: Play Store  ->  cerca \"ntfy\" (ntfy.sh)"
+        echo "   - iPhone:  App Store   ->  cerca \"ntfy\""
+        echo "   Apri l'app, tocca + e iscriviti a un canale (topic) a tua scelta."
+        echo "   Usa un nome lungo e difficile da indovinare: su ntfy.sh e' pubblico."
+        read -rp "Nome del canale di notifica (topic): " TOPIC
+        TOPIC="$(printf '%s' "$TOPIC" | tr -d '[:space:]')"
+        if [ -n "$TOPIC" ]; then
+            case "$TOPIC" in
+              http://*|https://*) NOTIFY_WEBHOOK="$TOPIC" ;;
+              *)                  NOTIFY_WEBHOOK="https://ntfy.sh/$TOPIC" ;;
+            esac
+            say "Canale impostato: $NOTIFY_WEBHOOK"
+            if need curl && curl -s --max-time 8 -H "Title: famboard" \
+                 -d "Notifiche attivate per famboard." "$NOTIFY_WEBHOOK" >/dev/null 2>&1; then
+                say "Inviata una notifica di prova: controlla il telefono."
+            fi
+        fi
+        ;;
+      2)
+        printf '\n'
+        say "Configurazione email (SMTP) — inserisci i parametri:"
+        read -rp "   Server SMTP (host): " NOTIFY_SMTP_HOST
+        read -rp "   Porta SMTP [587]: " ANS; NOTIFY_SMTP_PORT="${ANS:-587}"
+        read -rp "   Username SMTP: " NOTIFY_SMTP_USER
+        read -rsp "   Password SMTP: " NOTIFY_SMTP_PASS; echo
+        read -rp "   Mittente From [${NOTIFY_SMTP_USER}]: " ANS; NOTIFY_SMTP_FROM="${ANS:-$NOTIFY_SMTP_USER}"
+        read -rp "   Destinatario To: " NOTIFY_SMTP_TO
+        read -rp "   Usa TLS/STARTTLS? [S/n]: " ANS
+        case "$ANS" in n|N) NOTIFY_SMTP_TLS=false;; *) NOTIFY_SMTP_TLS=true;; esac
+        say "Il report automatico verra' inviato via email con il PDF in allegato."
+        ;;
+      *) say "Nessuna notifica configurata (potrai impostarla dopo in .env)." ;;
+    esac
+fi
+
+# 5) Other .env parameters ---------------------------------------------------
+printf '\n'
+say "Altri parametri (premi Invio per accettare il valore tra parentesi):"
+VERIFY_TLS="${PIHOLE_VERIFY_TLS:-$(ask 'Verificare il certificato TLS del Pi-hole? (true/false)' 'false')}"
+DBP="${DB_PATH:-$(ask 'Percorso del database' 'data/famboard.db')}"
+POLL="${POLL_INTERVAL:-$(ask 'Intervallo del poller (secondi)' '60')}"
+CENSUS="${CENSUS_CSV:-$(ask 'File CSV del censimento dispositivi' 'censimentoMAC/census.csv')}"
+ATT_MIN="${ATTENTION_MIN_INTERVAL:-$(ask 'Attenzione: minimo tra due report automatici (secondi)' '21600')}"
+ATT_CHK="${ATTENTION_CHECK_INTERVAL:-$(ask 'Attenzione: rivalutazione situazione (secondi)' '900')}"
+AI_URL="${AI_SUMMARY_URL:-$(ask 'LLM locale per il riassunto - URL OpenAI-compatibile (vuoto = nessuno)' '')}"
+AI_MODEL=""
+AI_KEY=""
+if [ -n "$AI_URL" ]; then
+    AI_MODEL="${AI_SUMMARY_MODEL:-$(ask 'LLM: nome del modello' 'local')}"
+    AI_KEY="${AI_SUMMARY_KEY:-$(ask 'LLM: API key (se richiesta)' '')}"
+fi
+
+# Dashboard login password (Enter = generane una robusta).
+APP_PASS="${APP_PASSWORD:-}"
+if [ -z "$APP_PASS" ]; then
+    if [ -t 0 ]; then read -rsp "   Password della dashboard (vuoto = generane una): " APP_PASS; echo; fi
+    [ -z "$APP_PASS" ] && APP_PASS="$(python3 -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(18)))')"
+fi
+
+# 6) Write .env --------------------------------------------------------------
 say "Scrittura di .env"
 umask 177
 cat > .env <<EOF
 PIHOLE_URL=$PH_URL
 PIHOLE_PASSWORD=$PH_PASS
-PIHOLE_VERIFY_TLS=false
-DB_PATH=data/famboard.db
-POLL_INTERVAL=60
+PIHOLE_VERIFY_TLS=$VERIFY_TLS
+DB_PATH=$DBP
+POLL_INTERVAL=$POLL
+CENSUS_CSV=$CENSUS
 APP_PASSWORD=$APP_PASS
+# SECRET_KEY: lasciato vuoto -> generato e salvato in data/.secret_key
 SECRET_KEY=
-WEBHOOK_URL=
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=
-SMTP_TO=
-SMTP_TLS=true
+WEBHOOK_URL=$NOTIFY_WEBHOOK
+SMTP_HOST=$NOTIFY_SMTP_HOST
+SMTP_PORT=$NOTIFY_SMTP_PORT
+SMTP_USER=$NOTIFY_SMTP_USER
+SMTP_PASS=$NOTIFY_SMTP_PASS
+SMTP_FROM=$NOTIFY_SMTP_FROM
+SMTP_TO=$NOTIFY_SMTP_TO
+SMTP_TLS=$NOTIFY_SMTP_TLS
+ATTENTION_MIN_INTERVAL=$ATT_MIN
+ATTENTION_CHECK_INTERVAL=$ATT_CHK
+AI_SUMMARY_URL=$AI_URL
+AI_SUMMARY_MODEL=$AI_MODEL
+AI_SUMMARY_KEY=$AI_KEY
 EOF
 umask 022
 
-# 5) DB + category lists -----------------------------------------------------
+# 7) DB + category lists -----------------------------------------------------
 say "Inizializzazione database e categorie..."
 .venv/bin/python -m famboard.cli init
 # se esiste un censimento CSV, precarica le etichette dei dispositivi
@@ -209,7 +302,7 @@ if [ ! -f data/categories/blacklists.tar.gz ]; then
         || warn "Liste categorie non scaricate: potrai farlo dopo con build-categories."
 fi
 
-# 6) systemd service + weekly report timer -----------------------------------
+# 8) systemd service + weekly report timer -----------------------------------
 if need systemctl && [ "$(id -u)" = 0 ]; then
     say "Installazione servizio systemd..."
     cat > /etc/systemd/system/famboard.service <<EOF
@@ -272,7 +365,7 @@ else
     warn "  .venv/bin/uvicorn famboard.web.app:app --host 0.0.0.0 --port $PORT"
 fi
 
-# 7) nome di rete (es. http://famboard.home) ---------------------------------
+# 9) nome di rete (es. http://famboard.home) ---------------------------------
 FAMBOARD_HOST="${FAMBOARD_HOST:-famboard.home}"
 IP_LOCAL="$(hostname -I 2>/dev/null | awk '{print $1}')"
 if [ -n "$FAMBOARD_HOST" ] && [ -n "$IP_LOCAL" ]; then

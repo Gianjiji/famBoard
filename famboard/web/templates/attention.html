@@ -3,19 +3,8 @@
 {% block body %}
 <div class="pagehead">
   <h1>Situazioni da attenzionare</h1>
-  <div class="rowform">
-    <a class="btn" href="/attention/report.pdf">Scarica report PDF</a>
-    <form method="post" action="/attention/report-now">
-      <button class="ghost" {{ 'disabled' if not webhook_set }}
-              title="{{ 'Configura WEBHOOK_URL o SMTP per inviare' if not webhook_set }}">
-        Invia ora via notifica
-      </button>
-    </form>
-  </div>
+  <a class="btn" href="/attention/report.pdf">Scarica report PDF</a>
 </div>
-
-{% if sent == 'sent' %}<div class="card ok"><p>Report inviato.</p></div>
-{% elif sent == 'empty' %}<div class="card"><p class="muted">Nessuna situazione sopra soglia: niente da inviare.</p></div>{% endif %}
 
 <section class="card">
   <p class="small muted">

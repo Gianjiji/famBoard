@@ -46,6 +46,13 @@ report. Variabili `PIHOLE_URL`/`PIHOLE_PASSWORD`/`APP_PASSWORD` preimpostate
 nell'ambiente rendono l'installazione non interattiva (`INSTALL_PIHOLE=1` forza
 l'installazione di Pi-hole in modo non interattivo).
 
+Durante il setup vengono chiesti **tutti i parametri** di `.env`, ciascuno con
+un valore predefinito accettabile con Invio, incluso il **canale di notifica**:
+*push* (ti indica di installare l'app **ntfy** da Play Store/App Store e chiede
+il nome del canale, salvato come `WEBHOOK_URL`) oppure *email* (chiede i
+parametri SMTP uno a uno). Scegliendo l'email, il report automatico «da
+attenzionare» arriva **con il PDF in allegato**.
+
 **Nome di rete:** il setup registra sul Pi-hole il record DNS locale
 **`famboard.home`** → IP del server e attiva un proxy systemd sulla porta 80
 (`famboard-80.socket`, inoltro alla porta dell'app): la dashboard si apre
@@ -169,8 +176,11 @@ viene riallineato.
   gruppo dedicato `famboard-kids-<id>` e applicate **solo ai dispositivi di quel
   minore**. Richiedono l'applicazione del controllo attiva; la prima attivazione
   ricostruisce la gravity del Pi-hole.
-- **Avvisi**: generati quando una categoria sensibile viene *effettivamente
-  raggiunta* (non bloccata dal Pi-hole), con acknowledge e notifiche webhook.
+- **Notifiche**: quando una categoria sensibile (per un minore) o critica (per
+  chiunque) viene *effettivamente raggiunta* (non bloccata dal Pi-hole), parte
+  una **notifica push/email** con il dettaglio (persona, dispositivo, MAC,
+  dominio). I riepiloghi si vedono in **Panoramica** e in **Attenzione** (non
+  c'è più una pagina «Avvisi» separata).
 - **Profilazione del disagio**: categorie "critiche" (segnali di
   autolesionismo/crisi, disturbi alimentari, estremismo) che allertano **per
   chiunque**, non solo minori, con un pannello dedicato in home. *Il DNS vede
@@ -181,8 +191,7 @@ viene riallineato.
   dando molto più peso alle categorie critiche. Ogni soggetto segnalato riporta
   i *motivi* leggibili e i **dispositivi** coinvolti (nome, **MAC**, possessore,
   tipo). Nessuna cattura di pacchetti: il DNS mostra i domini, non i contenuti.
-  Da qui si può **scaricare il report in PDF** (stile dashboard, tema scuro) o
-  forzarne l'invio via notifica.
+  Da qui si può **scaricare il report in PDF** (stile dashboard, tema scuro).
 - **Report «da attenzionare» event-driven**: inviato via webhook/email **solo
   quando la situazione cambia** rispetto all'ultimo invio (deduplica per firma)
   e non prima di `ATTENTION_MIN_INTERVAL`: niente report identici a raffica. In
