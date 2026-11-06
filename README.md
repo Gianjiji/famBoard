@@ -53,6 +53,11 @@ il nome del canale, salvato come `WEBHOOK_URL`) oppure *email* (chiede i
 parametri SMTP uno a uno). Scegliendo l'email, il report automatico «da
 attenzionare» arriva **con il PDF in allegato**.
 
+Il **riassunto AI** del report è opzionale: il setup lo chiede con un sì/no
+(default **no**) e famboard **non installa alcun modello** — se lo abiliti, si
+limita a interrogare un endpoint LLM già attivo e OpenAI-compatibile (es.
+ollama). Senza, tutto funziona comunque.
+
 **Nome di rete:** il setup registra sul Pi-hole il record DNS locale
 **`famboard.home`** → IP del server e attiva un proxy systemd sulla porta 80
 (`famboard-80.socket`, inoltro alla porta dell'app): la dashboard si apre

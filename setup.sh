@@ -257,12 +257,22 @@ POLL="${POLL_INTERVAL:-$(ask 'Intervallo del poller (secondi)' '60')}"
 CENSUS="${CENSUS_CSV:-$(ask 'File CSV del censimento dispositivi' 'censimentoMAC/census.csv')}"
 ATT_MIN="${ATTENTION_MIN_INTERVAL:-$(ask 'Attenzione: minimo tra due report automatici (secondi)' '21600')}"
 ATT_CHK="${ATTENTION_CHECK_INTERVAL:-$(ask 'Attenzione: rivalutazione situazione (secondi)' '900')}"
-AI_URL="${AI_SUMMARY_URL:-$(ask 'LLM locale per il riassunto - URL OpenAI-compatibile (vuoto = nessuno)' '')}"
-AI_MODEL=""
-AI_KEY=""
-if [ -n "$AI_URL" ]; then
-    AI_MODEL="${AI_SUMMARY_MODEL:-$(ask 'LLM: nome del modello' 'local')}"
-    AI_KEY="${AI_SUMMARY_KEY:-$(ask 'LLM: API key (se richiesta)' '')}"
+# Riassunto AI (OPZIONALE, disattivato di default). famboard NON installa alcun
+# modello: se lo abiliti, si limita a interrogare un endpoint LLM gia' attivo e
+# OpenAI-compatibile (es. ollama, llama.cpp). Senza, il report funziona lo stesso.
+AI_URL="${AI_SUMMARY_URL:-}"
+AI_MODEL="${AI_SUMMARY_MODEL:-}"
+AI_KEY="${AI_SUMMARY_KEY:-}"
+if [ -z "$AI_URL" ] && [ -t 0 ]; then
+    read -rp "   Abilitare il riassunto AI del report? (richiede un LLM locale gia' attivo) [s/N]: " A
+    case "$A" in
+      s|S|y|Y)
+        AI_URL="$(ask 'URL endpoint LLM OpenAI-compatibile' 'http://127.0.0.1:11434')"
+        AI_MODEL="$(ask 'Nome del modello' 'local')"
+        AI_KEY="$(ask 'API key (se richiesta, altrimenti vuoto)' '')"
+        ;;
+      *) say "Riassunto AI disattivato (puoi abilitarlo dopo in .env)." ;;
+    esac
 fi
 
 # Dashboard login password (Enter = generane una robusta).
