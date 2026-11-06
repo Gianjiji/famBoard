@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Attenzione · famboard{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <h1>Situazioni da attenzionare</h1>
+  <form method="post" action="/attention/report-now">
+    <button class="danger" {{ 'disabled' if not webhook_set }}
+            title="{{ 'Configura WEBHOOK_URL o SMTP per inviare' if not webhook_set }}">
+      Genera report ora
+    </button>
+  </form>
+</div>
+
+{% if sent == 'sent' %}<div class="card ok"><p>Report inviato.</p></div>
+{% elif sent == 'empty' %}<div class="card"><p class="muted">Nessuna situazione sopra soglia: niente da inviare.</p></div>{% endif %}
+
+<section class="card">
+  <p class="small muted">
+    Punteggio basato sui <b>domini</b> contattati (ricorrenza, varietà, ore notturne,
+    tendenza in crescita) — pesando molto di più le categorie critiche. Il DNS non
+    rivela i contenuti: usa questo come spunto per un confronto, non come prova.
+    Il report automatico parte da livello <b>«da attenzionare»</b> in su, solo quando
+    la situazione cambia rispetto all'ultimo invio.
+    {% if last_sent %}<br>Ultimo report automatico: {{ last_sent | int | datetime }}.{% endif %}
+  </p>
+</section>
+
+{% if subjects %}
+<section class="card">
+  <table class="attn">
+    <thead><tr><th>Livello</th><th>Soggetto</th><th class="r">Punteggio</th><th>Perché</th></tr></thead>
+    <tbody>
+    {% for s in subjects %}
+      <tr class="lv-{{ s.level }}">
+        <td><span class="lvtag lv-{{ s.level }}">
+          {% if s.level=='high' %}ALTA{% elif s.level=='concern' %}da attenzionare{% else %}osservazione{% endif %}
+        </span></td>
+        <td><a href="{{ s.link }}">{{ s.name }}</a>
+          {% if s.person_kind=='minor' %}<span class="tag warn">minore</span>
+          {% elif s.kind=='device' %}<span class="tag">dispositivo</span>{% endif %}
+          {% if s.has_critical %}<span class="tag hi">disagio</span>{% endif %}
+        </td>
+        <td class="r mono">{{ s.score }}</td>
+        <td><ul class="reasons">{% for r in s.reasons %}<li>{{ r }}</li>{% endfor %}</ul></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="card ok"><h2>✓ Nessuna situazione sopra soglia nel periodo</h2></section>
+{% endif %}
+{% endblock %}

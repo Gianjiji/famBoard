@@ -165,6 +165,18 @@ viene riallineato.
   autolesionismo/crisi, disturbi alimentari, estremismo) che allertano **per
   chiunque**, non solo minori, con un pannello dedicato in home. *Il DNS vede
   solo i domini contattati, non i termini di ricerca.*
+- **Attenzione**: una pagina che classifica persone e dispositivi con un
+  *punteggio di attenzione* calcolato dai domini sensibili/critici contattati —
+  pesando ricorrenza, varietà di domini, ore notturne e tendenza in crescita, e
+  dando molto più peso alle categorie critiche. Ogni soggetto segnalato riporta
+  i *motivi* leggibili. Nessuna cattura di pacchetti: il DNS mostra i domini, non
+  i contenuti. Da qui si può anche forzare l'invio del report con un pulsante.
+- **Report «da attenzionare» event-driven**: inviato via webhook/email **solo
+  quando la situazione cambia** rispetto all'ultimo invio (deduplica per firma)
+  e non prima di `ATTENTION_MIN_INTERVAL`: niente report identici a raffica. In
+  cima, un riassunto di contesto opzionale generato da un **LLM locale**
+  (`AI_SUMMARY_URL`, endpoint OpenAI-compatibile; disattivato se non impostato —
+  riceve solo i fatti già calcolati, mai contenuti di navigazione).
 - **Stato**: connessione Pi-hole, salute del poller, copertura categorie, e
   l'interruttore per l'applicazione dei blocchi.
 

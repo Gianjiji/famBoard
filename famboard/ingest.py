@@ -12,6 +12,7 @@ import time
 
 import httpx
 
+from . import db
 from .config import settings
 from .pihole import PiholeClient
 
@@ -276,6 +277,18 @@ def run_cycle(conn: sqlite3.Connection, client: PiholeClient) -> dict:
     n_q = ingest_queries(conn, client)
     n_notified = notify_alerts(conn)
     result = {"devices": n_dev, "new_queries": n_q, "notified": n_notified}
+    # Event-driven attention report, re-evaluated at most every
+    # ATTENTION_CHECK_INTERVAL seconds (the send itself is further gated).
+    try:
+        now = time.time()
+        checked = float(db.get_meta(conn, "attention_checked_ts", "0") or 0)
+        if now - checked >= settings.attention_check_interval:
+            from . import report
+            db.set_meta(conn, "attention_checked_ts", str(now))
+            conn.commit()
+            result["attention"] = report.dispatch_attention(conn, now=now)
+    except Exception as exc:
+        print(f"[attention] error: {exc}")
     # Access-control enforcement (opt-in: meta flag 'enforce' = '1').
     row = conn.execute("SELECT value FROM meta WHERE key='enforce'").fetchone()
     if row and row["value"] == "1":

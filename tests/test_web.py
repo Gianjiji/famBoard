@@ -131,3 +131,26 @@ def test_login_with_non_ascii_password_fails_cleanly(anon_client):
     assert r.status_code == 303                      # no 500
     assert r.headers["location"] == "/login?error=1"
     assert anon_client.get("/").status_code == 303   # still not authenticated
+
+
+# --- functional: attention page + force-report button ------------------
+def test_attention_page_and_report_button(client):
+    import time
+    conn = db.connect(settings.db_path)
+    conn.execute("INSERT INTO person(name,kind) VALUES('AttnKid','minor')")
+    pid = conn.execute("SELECT id FROM person WHERE name='AttnKid'").fetchone()["id"]
+    conn.execute("INSERT INTO device(mac,person_id) VALUES('aa:bb:cc:dd:ee:70',?)", (pid,))
+    now = time.time()
+    for i in range(50):
+        conn.execute("INSERT INTO query_event(ts,mac,domain,category_key,blocked) "
+                     "VALUES(?,?,?,?,0)",
+                     (now - (i % 7) * 86400, "aa:bb:cc:dd:ee:70",
+                      f"d{i%12}.adult.example", "adult"))
+    conn.commit(); conn.close()
+
+    r = client.get("/attention")
+    assert r.status_code == 200 and "AttnKid" in r.text
+
+    # force a report (no webhook configured in tests -> decided-to-send, no channel)
+    r = client.post("/attention/report-now", follow_redirects=False)
+    assert r.status_code == 303 and "/attention" in r.headers["location"]

@@ -45,6 +45,16 @@ class Settings:
     smtp_from: str = os.getenv("SMTP_FROM", "")
     smtp_to: str = os.getenv("SMTP_TO", "")
     smtp_tls: bool = _bool(os.getenv("SMTP_TLS"), True)
+    # Attention report (event-driven): min seconds between auto-sends, and how
+    # often the poller re-evaluates the situation.
+    attention_min_interval: int = int(os.getenv("ATTENTION_MIN_INTERVAL", "21600"))
+    attention_check_interval: int = int(os.getenv("ATTENTION_CHECK_INTERVAL", "900"))
+    # Optional local LLM (OpenAI-compatible endpoint, e.g. ollama / llama.cpp
+    # server) for a context-aware summary at the top of the attention report.
+    # Off unless a URL is set; failures are non-fatal.
+    ai_summary_url: str = os.getenv("AI_SUMMARY_URL", "")
+    ai_summary_model: str = os.getenv("AI_SUMMARY_MODEL", "")
+    ai_summary_key: str = os.getenv("AI_SUMMARY_KEY", "")
 
     def ensure_dirs(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

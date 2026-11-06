@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from .. import analytics, control, db, devices as devmod, ingest, taxonomy
+from .. import analytics, attention, control, db, devices as devmod, ingest, report, taxonomy
 from ..config import settings
 from ..pihole import PiholeClient
 
@@ -514,6 +514,33 @@ def alert_ack_all(window: str = Form("7d"), scope: str = Form("minors")):
     finally:
         conn.close()
     return RedirectResponse(f"/alerts?window={window}&scope={scope}", status_code=303)
+
+
+# -- attention -------------------------------------------------------------
+@app.get("/attention")
+def attention_page(request: Request, days: int = attention.WINDOW_DAYS, sent: str = ""):
+    conn = db.connect(settings.db_path)
+    try:
+        subjects = attention.score_subjects(conn, days=days)
+        last_ts = db.get_meta(conn, "attention_sent_ts", "")
+        ctx = _ctx(request, conn, "attention", subjects=subjects, days=days,
+                   auto_levels=attention.AUTO_LEVELS, sent=sent,
+                   last_sent=float(last_ts) if last_ts else None,
+                   webhook_set=bool(settings.webhook_url))
+    finally:
+        conn.close()
+    return templates.TemplateResponse(request, "attention.html", ctx)
+
+
+@app.post("/attention/report-now")
+def attention_report_now():
+    conn = db.connect(settings.db_path)
+    try:
+        res = report.dispatch_attention(conn, force=True)
+    finally:
+        conn.close()
+    flag = "sent" if res.get("sent") else "empty"
+    return RedirectResponse(f"/attention?sent={flag}", status_code=303)
 
 
 # -- status ----------------------------------------------------------------
