@@ -17,7 +17,8 @@
       </svg>
       <h1>famboard</h1>
       <p class="muted">Monitoraggio familiare</p>
-      {% if error %}<p class="loginerr">Password errata.</p>{% endif %}
+      {% if error == 'throttled' %}<p class="loginerr">Troppi tentativi. Riprova tra qualche minuto.</p>
+      {% elif error %}<p class="loginerr">Password errata.</p>{% endif %}
       <form method="post" action="/login">
         <input type="password" name="password" placeholder="Password" autofocus required>
         <button type="submit">Entra</button>

@@ -28,6 +28,17 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+
+# archivio cifrato: decifra prima (chiede la passphrase)
+case "$ARCHIVE" in
+    *.gpg)
+        command -v gpg >/dev/null 2>&1 || { echo "gpg non trovato per decifrare $ARCHIVE" >&2; exit 1; }
+        echo "==> Archivio cifrato: inserisci la passphrase..."
+        gpg -o "$TMP/backup.tar.gz" -d "$ARCHIVE"
+        ARCHIVE="$TMP/backup.tar.gz"
+        ;;
+esac
+
 tar -C "$TMP" -xzf "$ARCHIVE"
 SRC="$TMP/famboard-backup"
 [ -d "$SRC" ] || { echo "archivio non valido (manca famboard-backup/)" >&2; exit 1; }

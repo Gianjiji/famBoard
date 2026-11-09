@@ -154,28 +154,6 @@ def top_domains(conn: sqlite3.Connection, since: float, macs: list[str] | None =
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
-def alerts_list(conn: sqlite3.Connection, since: float, only_minors: bool = True,
-                include_ack: bool = True, limit: int = 200) -> list[dict]:
-    sql = ("SELECT a.id, a.ts, a.domain, a.risk_level, a.acknowledged, "
-           "       k.label category, k.key cat_key, k.color, COALESCE(k.critical,0) critical, "
-           "       p.id person_id, p.name person, "
-           "       p.kind person_kind, COALESCE(d.label, a.mac) device, "
-           "       COALESCE(d.merged_into, d.id) device_id "
-           "FROM alert a "
-           "LEFT JOIN device d ON d.mac = a.mac "
-           "LEFT JOIN person p ON p.id = d.person_id "
-           "LEFT JOIN category k ON k.key = a.category_key "
-           "WHERE a.ts >= ?")
-    params: list = [since]
-    if only_minors:
-        sql += " AND (p.kind = 'minor' OR k.critical = 1)"
-    if not include_ack:
-        sql += " AND a.acknowledged = 0"
-    sql += " ORDER BY a.ts DESC LIMIT ?"
-    params.append(limit)
-    return [dict(r) for r in conn.execute(sql, params).fetchall()]
-
-
 def open_alert_count(conn: sqlite3.Connection) -> int:
     """Unacknowledged alerts that concern a minor OR any critical category."""
     row = conn.execute(

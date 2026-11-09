@@ -10,9 +10,7 @@ from __future__ import annotations
 import sqlite3
 import time
 
-import httpx
-
-from . import db
+from . import db, notify
 from .config import settings
 from .pihole import PiholeClient
 
@@ -188,22 +186,16 @@ def notify_alerts(conn: sqlite3.Connection, max_age_s: int = 3600) -> int:
     sent = 0
     for r in rows:
         if settings.webhook_url and (now - r["ts"]) <= max_age_s:
-            try:
-                title = ("famboard - possibile disagio" if r["critical"]
-                         else "famboard - avviso minore")
-                dtype = f", {r['device_type']}" if r["device_type"] else ""
-                msg = (f"{r['person']} — {r['device']} [{r['mac']}{dtype}]\n"
-                       f"ha raggiunto '{r['cat_label']}': {r['domain']}")
-                if r["critical"]:
-                    msg += "\nValuta un confronto sereno con la persona."
-                httpx.post(settings.webhook_url, content=msg.encode("utf-8"),
-                           headers={"Title": title,
-                                    "Priority": "high" if (r["critical"] or r["risk_level"] >= 2)
-                                    else "default"},
-                           timeout=8.0)
+            title = ("famboard - possibile disagio" if r["critical"]
+                     else "famboard - avviso minore")
+            dtype = f", {r['device_type']}" if r["device_type"] else ""
+            msg = (f"{r['person']} — {r['device']} [{r['mac']}{dtype}]\n"
+                   f"ha raggiunto '{r['cat_label']}': {r['domain']}")
+            if r["critical"]:
+                msg += "\nValuta un confronto sereno con la persona."
+            prio = "high" if (r["critical"] or r["risk_level"] >= 2) else "default"
+            if notify.push(msg, title, prio):
                 sent += 1
-            except Exception as exc:
-                print(f"[notify] webhook error: {exc}")
         conn.execute("UPDATE alert SET notified = 1 WHERE id = ?", (r["id"],))
     conn.commit()
     return sent

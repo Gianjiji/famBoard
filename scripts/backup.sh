@@ -9,16 +9,24 @@
 #   scripts/backup.sh                       # -> famboard-backup-<data>.tar.gz
 #   scripts/backup.sh -o /path/mio.tar.gz   # nome file a scelta
 #   scripts/backup.sh --with-categories     # include anche il tarball UT1 sorgente
+#   scripts/backup.sh --slim                # esclude l'indice domini→categoria
+#                                           # (ricostruibile): archivio molto piu' piccolo
+#   scripts/backup.sh --encrypt             # cifra l'archivio (gpg simmetrico)
+#
+# ATTENZIONE: l'archivio contiene .env (password Pi-hole, SMTP, dashboard) e lo
+# storico dei domini: trattalo come un segreto. Usa --encrypt per conservarlo.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_DIR"
 
-OUT=""; WITH_CAT=0
+OUT=""; WITH_CAT=0; SLIM=0; ENCRYPT=0
 while [ $# -gt 0 ]; do
     case "$1" in
         -o) OUT="${2:?manca il nome file dopo -o}"; shift 2;;
         --with-categories) WITH_CAT=1; shift;;
+        --slim) SLIM=1; shift;;
+        --encrypt) ENCRYPT=1; shift;;
         -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
         *) echo "argomento non riconosciuto: $1" >&2; exit 1;;
     esac
@@ -32,14 +40,21 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 STAGE="$TMP/famboard-backup"; mkdir -p "$STAGE/data"
 
 if [ -f "$DBP" ]; then
-    echo "==> Snapshot consistente del database..."
-    "$PY" - "$DBP" "$STAGE/data/famboard.db" <<'PY'
-import sqlite3, sys
+    echo "==> Snapshot consistente del database$([ "$SLIM" = 1 ] && echo ' (slim)')..."
+    SLIM="$SLIM" "$PY" - "$DBP" "$STAGE/data/famboard.db" <<'PY'
+import os, sqlite3, sys
 src, dst = sys.argv[1], sys.argv[2]
 s = sqlite3.connect(src); d = sqlite3.connect(dst)
 with d:
-    s.backup(d)
-s.close(); d.close()
+    s.backup(d)       # copia consistente anche a servizio acceso
+s.close()
+if os.environ.get("SLIM") == "1":
+    # l'indice domini→categoria si ricostruisce dalle liste UT1: lo togliamo
+    # per alleggerire l'archivio; il restore lo rigenera.
+    d.execute("DELETE FROM domain_category")
+    d.commit()
+    d.execute("VACUUM")
+d.close()
 PY
 else
     echo "[!] Database non trovato in $DBP (backup senza DB)." >&2
@@ -59,8 +74,18 @@ creato:  $(date -Iseconds)
 host:    $(hostname 2>/dev/null || echo ?)
 commit:  $(git rev-parse --short HEAD 2>/dev/null || echo n/d)
 db:      $DBP
+slim:    $([ "$SLIM" = 1 ] && echo "si (indice da ricostruire)" || echo no)
 EOF
 
 tar -C "$TMP" -czf "$OUT" famboard-backup
+
+if [ "$ENCRYPT" = 1 ]; then
+    command -v gpg >/dev/null 2>&1 || { echo "[x] gpg non trovato: impossibile cifrare." >&2; exit 1; }
+    echo "==> Cifratura dell'archivio (inserisci una passphrase)..."
+    gpg --symmetric --cipher-algo AES256 -o "$OUT.gpg" "$OUT"
+    rm -f "$OUT"; OUT="$OUT.gpg"
+    echo "    Per ripristinare: gpg -o archivio.tar.gz -d $OUT  (poi restore.sh)"
+fi
+
 echo "==> Backup creato: $OUT ($(du -h "$OUT" | cut -f1))"
-echo "    Ripristina sul nuovo container con: scripts/restore.sh $OUT"
+[ "$ENCRYPT" = 1 ] || echo "    Ripristina con: scripts/restore.sh $OUT"

@@ -201,6 +201,7 @@ NOTIFY_SMTP_PASS="${SMTP_PASS:-}"
 NOTIFY_SMTP_FROM="${SMTP_FROM:-}"
 NOTIFY_SMTP_TO="${SMTP_TO:-}"
 NOTIFY_SMTP_TLS="${SMTP_TLS:-true}"
+NOTIFY_TOKEN="${WEBHOOK_TOKEN:-}"
 
 if [ -z "$NOTIFY_WEBHOOK" ] && [ -z "$NOTIFY_SMTP_HOST" ] && [ -t 0 ]; then
     printf '\n'
@@ -216,16 +217,21 @@ if [ -z "$NOTIFY_WEBHOOK" ] && [ -z "$NOTIFY_SMTP_HOST" ] && [ -t 0 ]; then
         echo "   - Android: Play Store  ->  cerca \"ntfy\" (ntfy.sh)"
         echo "   - iPhone:  App Store   ->  cerca \"ntfy\""
         echo "   Apri l'app, tocca + e iscriviti a un canale (topic) a tua scelta."
-        echo "   Usa un nome lungo e difficile da indovinare: su ntfy.sh e' pubblico."
-        read -rp "Nome del canale di notifica (topic): " TOPIC
+        warn "Le notifiche contengono nomi dei minori e categorie delicate."
+        echo "   Su ntfy.sh pubblico chiunque conosca il topic le legge: usa un nome"
+        echo "   lungo e segreto, o meglio un ntfy self-hosted / topic protetto da token."
+        read -rp "Nome del canale di notifica (topic) o URL completo: " TOPIC
         TOPIC="$(printf '%s' "$TOPIC" | tr -d '[:space:]')"
         if [ -n "$TOPIC" ]; then
             case "$TOPIC" in
               http://*|https://*) NOTIFY_WEBHOOK="$TOPIC" ;;
               *)                  NOTIFY_WEBHOOK="https://ntfy.sh/$TOPIC" ;;
             esac
+            read -rp "Token di accesso del canale (se protetto; vuoto = nessuno): " NOTIFY_TOKEN
+            NOTIFY_TOKEN="$(printf '%s' "$NOTIFY_TOKEN" | tr -d '[:space:]')"
             say "Canale impostato: $NOTIFY_WEBHOOK"
-            if need curl && curl -s --max-time 8 -H "Title: famboard" \
+            AUTH=(); [ -n "$NOTIFY_TOKEN" ] && AUTH=(-H "Authorization: Bearer $NOTIFY_TOKEN")
+            if need curl && curl -s --max-time 8 -H "Title: famboard" "${AUTH[@]}" \
                  -d "Notifiche attivate per famboard." "$NOTIFY_WEBHOOK" >/dev/null 2>&1; then
                 say "Inviata una notifica di prova: controlla il telefono."
             fi
@@ -263,6 +269,7 @@ ATT_CHK="${ATTENTION_CHECK_INTERVAL:-$(ask 'Attenzione: rivalutazione situazione
 AI_URL="${AI_SUMMARY_URL:-}"
 AI_MODEL="${AI_SUMMARY_MODEL:-}"
 AI_KEY="${AI_SUMMARY_KEY:-}"
+AI_ALLOW_REMOTE="${AI_SUMMARY_ALLOW_REMOTE:-false}"
 if [ -z "$AI_URL" ] && [ -t 0 ]; then
     read -rp "   Abilitare il riassunto AI del report? (richiede un LLM locale gia' attivo) [s/N]: " A
     case "$A" in
@@ -270,6 +277,13 @@ if [ -z "$AI_URL" ] && [ -t 0 ]; then
         AI_URL="$(ask 'URL endpoint LLM OpenAI-compatibile' 'http://127.0.0.1:11434')"
         AI_MODEL="$(ask 'Nome del modello' 'local')"
         AI_KEY="$(ask 'API key (se richiesta, altrimenti vuoto)' '')"
+        # L'AI riceve nomi + categorie delicate: se l'endpoint non e' locale,
+        # richiedi conferma esplicita (altrimenti famboard lo rifiuta a runtime).
+        if [ -n "$AI_URL" ] && ! .venv/bin/python -c "import sys;from famboard.config import host_is_local;sys.exit(0 if host_is_local(sys.argv[1]) else 1)" "$AI_URL" 2>/dev/null; then
+            warn "L'endpoint '$AI_URL' NON è locale: invieresti dati sensibili fuori rete."
+            read -rp "   Confermi di volerlo usare comunque? [s/N]: " AR
+            case "$AR" in s|S|y|Y) AI_ALLOW_REMOTE=true;; *) AI_URL=""; AI_MODEL=""; AI_KEY=""; say "AI disattivata.";; esac
+        fi
         ;;
       *) say "Riassunto AI disattivato (puoi abilitarlo dopo in .env)." ;;
     esac
@@ -296,6 +310,7 @@ APP_PASSWORD=$APP_PASS
 # SECRET_KEY: lasciato vuoto -> generato e salvato in data/.secret_key
 SECRET_KEY=
 WEBHOOK_URL=$NOTIFY_WEBHOOK
+WEBHOOK_TOKEN=$NOTIFY_TOKEN
 SMTP_HOST=$NOTIFY_SMTP_HOST
 SMTP_PORT=$NOTIFY_SMTP_PORT
 SMTP_USER=$NOTIFY_SMTP_USER
@@ -308,6 +323,9 @@ ATTENTION_CHECK_INTERVAL=$ATT_CHK
 AI_SUMMARY_URL=$AI_URL
 AI_SUMMARY_MODEL=$AI_MODEL
 AI_SUMMARY_KEY=$AI_KEY
+AI_SUMMARY_ALLOW_REMOTE=$AI_ALLOW_REMOTE
+LOGIN_MAX_ATTEMPTS=8
+LOGIN_COOLDOWN_S=300
 EOF
 umask 022
 fi  # end of the "configure .env" block (skipped when reusing an existing .env)

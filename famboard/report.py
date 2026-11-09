@@ -15,8 +15,8 @@ from email.mime.text import MIMEText
 
 import httpx
 
-from . import analytics, attention, db
-from .config import settings
+from . import analytics, attention, db, notify
+from .config import host_is_local, settings
 
 NIGHT_HOURS = set(range(22, 24)) | set(range(0, 7))
 
@@ -98,15 +98,8 @@ def render_html(report: dict) -> str:
 
 
 def deliver(report: dict) -> dict:
-    text = render_text(report)
     result = {"webhook": False, "email": False}
-    if settings.webhook_url:
-        try:
-            httpx.post(settings.webhook_url, content=text.encode("utf-8"),
-                       headers={"Title": "famboard - report settimanale"}, timeout=10.0)
-            result["webhook"] = True
-        except Exception as exc:
-            print(f"[report] webhook error: {exc}")
+    result["webhook"] = notify.push(render_text(report), "famboard - report settimanale")
     _send_email(render_html(report), "famboard — report settimanale", result)
     return result
 
@@ -208,6 +201,12 @@ def ai_summary(report: dict) -> str | None:
     endpoint; never raw browsing content. Any failure returns None (non-fatal)."""
     if not settings.ai_summary_url or not report["subjects"]:
         return None
+    # Guard: this payload carries names + distress categories. Refuse a non-local
+    # endpoint unless the owner explicitly allowed it (AI_SUMMARY_ALLOW_REMOTE).
+    if not settings.ai_summary_allow_remote and not host_is_local(settings.ai_summary_url):
+        print("[attention] AI summary skipped: endpoint non locale "
+              "(imposta AI_SUMMARY_ALLOW_REMOTE=1 per consentirlo).")
+        return None
     facts = [{"soggetto": s["name"], "tipo": s["kind"], "livello": s["level"],
               "punteggio": s["score"], "motivi": s["reasons"]}
              for s in report["subjects"]]
@@ -238,14 +237,7 @@ def _deliver_attention(report: dict, flagged: list[dict]) -> dict:
     text = render_attention_text(report, flagged)
     result = {"webhook": False, "email": False}
     priority = "high" if any(s["level"] == "high" for s in flagged) else "default"
-    if settings.webhook_url:
-        try:
-            httpx.post(settings.webhook_url, content=text.encode("utf-8"),
-                       headers={"Title": "famboard - situazioni da attenzionare",
-                                "Priority": priority}, timeout=10.0)
-            result["webhook"] = True
-        except Exception as exc:
-            print(f"[attention] webhook error: {exc}")
+    result["webhook"] = notify.push(text, "famboard - situazioni da attenzionare", priority)
     # email carries the full report as a styled PDF attachment
     pdf = None
     if settings.smtp_host and settings.smtp_to:

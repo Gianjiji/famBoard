@@ -100,6 +100,17 @@ def _timeline(conn, since: float, window: str, macs=None) -> list[dict]:
 
 
 # -- auth ------------------------------------------------------------------
+# Simple in-memory login throttle: N failures per source IP -> cooldown. Enough
+# to blunt brute force on a LAN/Tailscale-exposed box; resets on restart.
+_login_fails: dict[str, list] = {}
+
+
+def _throttled(ip: str, now: float) -> bool:
+    fails = [t for t in _login_fails.get(ip, []) if now - t < settings.login_cooldown_s]
+    _login_fails[ip] = fails
+    return len(fails) >= settings.login_max_attempts
+
+
 @app.get("/login")
 def login_form(request: Request, error: str = ""):
     return templates.TemplateResponse(request, "login.html",
@@ -108,12 +119,18 @@ def login_form(request: Request, error: str = ""):
 
 @app.post("/login")
 def login(request: Request, password: str = Form(...)):
+    ip = request.client.host if request.client else "?"
+    now = time.time()
+    if _throttled(ip, now):
+        return RedirectResponse("/login?error=throttled", status_code=303)
     # compare bytes: compare_digest refuses non-ASCII str (typed accents/smart
     # quotes must fail auth cleanly, not crash with a 500)
     if settings.app_password and hmac.compare_digest(
             password.encode("utf-8"), settings.app_password.encode("utf-8")):
+        _login_fails.pop(ip, None)
         request.session["auth"] = True
         return RedirectResponse("/", status_code=303)
+    _login_fails.setdefault(ip, []).append(now)
     return RedirectResponse("/login?error=1", status_code=303)
 
 

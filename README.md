@@ -178,8 +178,15 @@ sudo ./scripts/restore.sh famboard-backup-<data>.tar.gz
 `setup.sh` che **riusa il `.env` ripristinato** (nessuna riconfigurazione) e
 **salta il download delle categorie** se l'indice è già nel DB. Il backup usa lo
 snapshot online di SQLite (consistente anche a servizio acceso); `--no-service`
-ripristina i dati senza toccare systemd. Nel DB c'è già l'indice, quindi la
-migrazione non riscarica i ~5M domini.
+ripristina i dati senza toccare systemd.
+
+Opzioni del backup:
+- `--slim` esclude l'indice domini→categoria (ricostruibile): archivio molto più
+  piccolo (~66 MB invece di ~175 MB); al restore `setup.sh` lo rigenera.
+- `--encrypt` cifra l'archivio con GPG simmetrico (`restore.sh` decifra i `.gpg`).
+
+> ⚠️ L'archivio contiene `.env` (password Pi-hole/SMTP/dashboard) e lo storico
+> dei domini: è sensibile quanto il `.env`. Conservalo cifrato (`--encrypt`).
 
 ## Funzionalità della dashboard
 
@@ -237,7 +244,16 @@ migrazione non riscarica i ~5M domini.
   Se vuota, la dashboard è aperta (solo LAN fidata). La password del Pi-hole e
   quella della dashboard vivono solo in `.env` (gitignored).
 - **Notifiche**: imposta `WEBHOOK_URL` (es. un topic ntfy) per ricevere un
-  avviso quando un minore raggiunge una categoria sensibile.
+  avviso quando un minore raggiunge una categoria sensibile. **Le push
+  contengono nomi dei minori e categorie delicate**: non usare un topic pubblico
+  su `ntfy.sh` (chiunque lo conosca le legge). Preferisci un **ntfy
+  self-hosted** o un **topic protetto da token** (`WEBHOOK_TOKEN`, inviato come
+  `Authorization: Bearer`).
+- **Riassunto AI (privacy)**: il riassunto opzionale invia nomi e categorie di
+  disagio all'endpoint LLM. famboard **rifiuta un endpoint non locale** a meno di
+  impostare esplicitamente `AI_SUMMARY_ALLOW_REMOTE=true`: tienilo in LAN.
+- **Login**: oltre a `APP_PASSWORD`, c'è un throttling per IP
+  (`LOGIN_MAX_ATTEMPTS`/`LOGIN_COOLDOWN_S`) contro i tentativi a forza bruta.
 - **Storico**: l'API del Pi-hole serve **solo le ultime 24h** (il limite
   `webserver.api.maxHistory` è fissato a 86400 e non è aumentabile). Per lo
   storico profondo (fino a `maxDBdays`, ~90 giorni) si legge direttamente il DB
@@ -260,7 +276,14 @@ migrazione non riscarica i ~5M domini.
   è confinata al solo gruppo blockall (mai sul Default), così la rete non viene
   mai oscurata per errore. Il blocco è a livello DNS (come ogni parental control
   basato su Pi-hole): efficace sui dispositivi comuni, aggirabile da chi usa DNS
-  privato/DoH/VPN.
+  privato/DoH/VPN. **Consiglio**: assegna un **lease DHCP riservato** (IP fisso)
+  ai dispositivi sotto controllo — i client sono agganciati per IP corrente, e un
+  IP che cambia spesso provoca riscritture e riavvii del resolver a ogni ciclo.
+- **Verifica dell'enforcement**: le scritture sul Pi-hole (gruppi, client,
+  adlist, gravity, record DNS) sono coperte dai test con un Pi-hole simulato. Per
+  validarle contro un Pi-hole reale c'è un test di contratto *read-only*,
+  disattivato di default: `FAMBOARD_PIHOLE_TEST=1 PIHOLE_URL=… PIHOLE_PASSWORD=…
+  .venv/bin/pytest tests/test_hardening.py`.
 
 ## Test
 

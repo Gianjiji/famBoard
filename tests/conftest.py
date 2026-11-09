@@ -32,6 +32,18 @@ def _fresh_db(path):
     return conn
 
 
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    """The login throttle keeps per-IP failure state in a module global; clear
+    it between tests so one test's failed logins don't block another's."""
+    try:
+        from famboard.web import app as webapp
+        webapp._login_fails.clear()
+    except Exception:
+        pass
+    yield
+
+
 @pytest.fixture
 def conn():
     """A fresh, isolated in-file DB connection (categories + domains seeded)."""

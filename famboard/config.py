@@ -20,6 +20,27 @@ def _bool(val: str | None, default: bool = False) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def host_is_local(url: str) -> bool:
+    """True if the URL points at loopback or a private/LAN address — used to
+    keep sensitive data (AI summary) from leaving the home network by default."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+    host = (urlparse(url).hostname or "").strip()
+    if not host:
+        return False
+    if host in ("localhost", "ip6-localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            ip = ipaddress.ip_address(socket.gethostbyname(host))
+        except Exception:
+            return False  # can't resolve -> treat as non-local (safer)
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
 @dataclass(frozen=True)
 class Settings:
     pihole_url: str = os.getenv("PIHOLE_URL", "https://192.168.1.46").rstrip("/")
@@ -37,6 +58,10 @@ class Settings:
     secret_key: str = os.getenv("SECRET_KEY", "")
     # Optional webhook for minor alerts (e.g. an ntfy topic URL). POST json+text.
     webhook_url: str = os.getenv("WEBHOOK_URL", "")
+    # Optional bearer token for a PROTECTED/self-hosted ntfy (or any webhook that
+    # wants Authorization). Strongly recommended: pushes carry minors' names and
+    # distress categories — don't send them to a public, unauthenticated topic.
+    webhook_token: str = os.getenv("WEBHOOK_TOKEN", "")
     # Optional SMTP for weekly reports by email. Email is sent only if host+to set.
     smtp_host: str = os.getenv("SMTP_HOST", "")
     smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
@@ -55,6 +80,12 @@ class Settings:
     ai_summary_url: str = os.getenv("AI_SUMMARY_URL", "")
     ai_summary_model: str = os.getenv("AI_SUMMARY_MODEL", "")
     ai_summary_key: str = os.getenv("AI_SUMMARY_KEY", "")
+    # The AI summary ships names + distress categories: refuse a non-local
+    # endpoint unless the owner knowingly opts in. See config.host_is_local().
+    ai_summary_allow_remote: bool = _bool(os.getenv("AI_SUMMARY_ALLOW_REMOTE"), False)
+    # Login throttling: max failed attempts per source before a cooldown.
+    login_max_attempts: int = int(os.getenv("LOGIN_MAX_ATTEMPTS", "8"))
+    login_cooldown_s: int = int(os.getenv("LOGIN_COOLDOWN_S", "300"))
 
     def ensure_dirs(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
