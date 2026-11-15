@@ -129,7 +129,7 @@ CURATED: dict[str, str] = {
     "sky.it": "entertainment", "tim.it": "entertainment",
     # more games
     "fortnite.com": "games", "activision.com": "games", "blizzard.com": "games",
-    "battle.net": "games", "twitch.tv": "entertainment",
+    "battle.net": "games",
     # dating (minor-sensitive)
     "tinder.com": "dating", "bumble.com": "dating", "badoo.com": "dating",
     "onlyfans.com": "adult",

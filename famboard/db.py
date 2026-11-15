@@ -61,11 +61,15 @@ CREATE TABLE IF NOT EXISTS category (
 );
 
 -- Domain -> category index, built from categorized block/allow lists.
+-- WITHOUT ROWID: millions of rows keyed by a text domain are stored once, in a
+-- single b-tree, instead of once in the table and again in the primary-key
+-- index. A database created before this keeps the old layout until
+-- `famboard optimize-db` rebuilds it (see maintenance.py); both work.
 CREATE TABLE IF NOT EXISTS domain_category (
     domain       TEXT PRIMARY KEY,
     category_key TEXT NOT NULL REFERENCES category(key),
     source       TEXT
-);
+) WITHOUT ROWID;
 
 -- Ingested, classified DNS events. id = Pi-hole query id (dedup on conflict).
 CREATE TABLE IF NOT EXISTS query_event (

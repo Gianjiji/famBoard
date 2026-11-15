@@ -6,6 +6,7 @@ connection.
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 import threading
 import time
@@ -13,8 +14,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -29,6 +30,8 @@ templates = Jinja2Templates(directory=str(HERE / "templates"))
 templates.env.filters["datetime"] = \
     lambda ts: datetime.fromtimestamp(ts).strftime("%d/%m %H:%M") if ts else "—"
 
+log = logging.getLogger("famboard.web")
+
 _stop = threading.Event()
 BUCKETS = {"24h": 3600, "7d": 21600, "30d": 86400}
 PUBLIC_PATHS = ("/login", "/static", "/logout", "/health")
@@ -42,8 +45,10 @@ def _poller() -> None:
     while not _stop.is_set():
         try:
             ingest.run_cycle(conn, client)
-        except Exception as exc:
-            print(f"[poller] error: {exc}")
+        except Exception:
+            # With the traceback: "error: database is locked" alone says
+            # nothing about where the cycle stopped.
+            log.exception("[poller] error")
         _stop.wait(settings.poll_interval)
     client.close()
     conn.close()
@@ -51,13 +56,21 @@ def _poller() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not logging.getLogger().handlers:
+        # uvicorn configures only its own loggers: without this, anything
+        # below WARNING from famboard.* would be dropped.
+        logging.basicConfig(level=logging.INFO,
+                            format="%(asctime)s %(name)s %(levelname)s %(message)s")
+        # ...but not one line per Pi-hole API call, every poll cycle, forever.
+        for noisy in ("httpx", "httpcore"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
     settings.ensure_dirs()
     db.init_db(settings.db_path)
     conn = db.connect(settings.db_path)
     taxonomy.seed_categories(conn)
     conn.close()
     if not settings.app_password:
-        print("[auth] APP_PASSWORD empty -> dashboard login DISABLED (LAN only)")
+        log.warning("[auth] APP_PASSWORD empty -> dashboard login DISABLED (LAN only)")
     # Tests (and setups that only want the web UI) can skip the Pi-hole poller.
     if not os.getenv("FAMBOARD_DISABLE_POLLER"):
         t = threading.Thread(target=_poller, daemon=True)
@@ -68,6 +81,30 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="famboard", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+
+
+@app.exception_handler(control.RuleError)
+async def rule_error(request: Request, exc: control.RuleError):
+    """A control form with values no rule can be built from: a plain 400.
+    The pages only ever send valid values, so this is reached by hand-made
+    requests; what matters is that nothing is stored and nothing crashes."""
+    return PlainTextResponse(f"Richiesta non valida: {exc}", status_code=400)
+
+
+PERSON_KINDS = ("adult", "minor")
+
+
+def _person_fields(name: str, kind: str, birth_year: str, note: str) -> tuple:
+    """Validated (name, kind, birth_year, note) for a person form, or a 400.
+    The table has a CHECK on kind: an unexpected value used to surface as an
+    IntegrityError, i.e. a 500."""
+    name = name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Il nome è obbligatorio.")
+    if kind not in PERSON_KINDS:
+        raise HTTPException(status_code=400, detail="Tipo di persona non valido.")
+    by = int(birth_year) if birth_year.strip().isdigit() and len(birth_year.strip()) <= 4 else None
+    return name, kind, by, note.strip() or None
 
 
 @app.middleware("http")
@@ -205,11 +242,11 @@ def people_page(request: Request):
 @app.post("/people")
 def people_add(name: str = Form(...), kind: str = Form(...),
                birth_year: str = Form(""), note: str = Form("")):
+    fields = _person_fields(name, kind, birth_year, note)
     conn = db.connect(settings.db_path)
     try:
-        by = int(birth_year) if birth_year.strip().isdigit() else None
         conn.execute("INSERT INTO person(name, kind, birth_year, note) VALUES(?,?,?,?)",
-                     (name.strip(), kind, by, note.strip() or None))
+                     fields)
         conn.commit()
     finally:
         conn.close()
@@ -219,11 +256,11 @@ def people_add(name: str = Form(...), kind: str = Form(...),
 @app.post("/people/{pid}/edit")
 def people_edit(pid: int, name: str = Form(...), kind: str = Form(...),
                 birth_year: str = Form(""), note: str = Form("")):
+    fields = _person_fields(name, kind, birth_year, note)
     conn = db.connect(settings.db_path)
     try:
-        by = int(birth_year) if birth_year.strip().isdigit() else None
         conn.execute("UPDATE person SET name=?, kind=?, birth_year=?, note=? WHERE id=?",
-                     (name.strip(), kind, by, note.strip() or None, pid))
+                     (*fields, pid))
         conn.commit()
     finally:
         conn.close()
@@ -266,7 +303,14 @@ def device_update(did: int, label: str = Form(""), device_type: str = Form(""),
         if assignment == "shared":
             is_shared = 1
         elif assignment.startswith("p"):
-            person_id = int(assignment[1:])
+            raw = assignment[1:]
+            if not (raw.isascii() and raw.isdigit() and len(raw) <= 9):
+                raise HTTPException(status_code=400, detail="Assegnazione non valida.")
+            person_id = int(raw)
+            if conn.execute("SELECT 1 FROM person WHERE id=?", (person_id,)).fetchone() is None:
+                raise HTTPException(status_code=400, detail="Persona inesistente.")
+        elif assignment:
+            raise HTTPException(status_code=400, detail="Assegnazione non valida.")
         conn.execute(
             "UPDATE device SET label=?, device_type=?, person_id=?, is_shared=? WHERE id=?",
             (label.strip() or None, device_type.strip() or None, person_id, is_shared, did))
@@ -337,13 +381,18 @@ def _device_mac(conn, did: int) -> str | None:
     return r["mac"] if r else None
 
 
+MAX_TIMED_MINUTES = 366 * 24 * 60   # a one-off block longer than a year is a typo
+
+
 def _until_from_time(hhmm: str) -> float | None:
-    """Next occurrence of HH:MM (today if still ahead, else tomorrow)."""
-    if not hhmm or ":" not in hhmm:
+    """Next occurrence of HH:MM (today if still ahead, else tomorrow).
+    Empty means "no end time"; anything else that is not a time of day raises
+    control.RuleError (a 400), where it used to be a ValueError (a 500)."""
+    if not hhmm or not hhmm.strip():
         return None
-    h, m = (int(x) for x in hhmm.split(":"))
+    minutes = control.parse_hm(hhmm)
     now = datetime.now()
-    target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    target = now.replace(hour=minutes // 60, minute=minutes % 60, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
     return target.timestamp()
@@ -378,6 +427,8 @@ def control_timed(did: int, target: str = Form("all"), minutes: int = Form(0),
                   delay: int = Form(0), until_time: str = Form("")):
     conn = db.connect(settings.db_path)
     try:
+        if minutes < 0 or delay < 0 or minutes > MAX_TIMED_MINUTES or delay > MAX_TIMED_MINUTES:
+            raise control.RuleError("durata o ritardo fuori intervallo")
         mac = _device_mac(conn, did)
         if mac:
             now = time.time()
@@ -401,6 +452,10 @@ def control_schedule(did: int, target: str = Form("all"), kind: str = Form("sche
     try:
         mac = _device_mac(conn, did)
         if mac:
+            if any(not (d.isascii() and d.isdigit() and len(d) == 1) for d in days):
+                raise control.RuleError("giorni non validi (attesi numeri da 0=lun a 6=dom)")
+            if kind not in ("schedule", "allow_window"):
+                raise control.RuleError(f"tipo di regola sconosciuto: {kind!r}")
             day_ints = [int(d) for d in days] if days else None
             win = {"start": start, "end": end}
             if day_ints is not None:

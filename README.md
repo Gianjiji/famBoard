@@ -139,6 +139,36 @@ il testo ma non lo recapita.
 | `famboard.cli report --days N [--send]` | report attività per persona |
 | `famboard.cli census-sync [--csv F]` | sincronizza censimento CSV ↔ DB (vedi sotto) |
 | `famboard.cli prune --days N [--yes]` | rimuove i dispositivi non visti da N giorni |
+| `famboard.cli prune-events --days N [--yes]` | elimina gli eventi DNS più vecchi di N giorni (gli avvisi restano); senza `--yes` mostra solo quanti sarebbero |
+| `famboard.cli optimize-db [--no-vacuum]` | compatta l'indice dei domini, aggiorna le statistiche e ricompatta il file (vedi sotto) |
+
+### Dimensione e velocità del database
+
+Ogni richiesta DNS della casa diventa una riga: il database cresce soltanto. Tre
+strumenti lo tengono a bada, nessuno attivo senza che lo si chieda.
+
+- **Conservazione** — `RETENTION_DAYS=N` nel `.env` fa eliminare al poller, una
+  volta al giorno, gli eventi più vecchi di N giorni. Il valore predefinito è `0`:
+  si conserva tutto. Gli avvisi non vengono mai eliminati. `prune-events` fa la
+  stessa cosa a mano, con anteprima.
+- **Compattazione** — in un database creato con una versione precedente l'indice
+  dominio→categoria (milioni di righe) è memorizzato due volte. `optimize-db` lo
+  ricostruisce in forma compatta (`WITHOUT ROWID`), aggiorna le statistiche del
+  planner e ricompatta il file con `VACUUM`. Su un database reale da 861 MB:
+  39 secondi, 621 MB alla fine, contenuto identico. Va eseguito **a servizio
+  fermo** e con spazio libero pari alla dimensione del file:
+
+  ```bash
+  sudo systemctl stop famboard
+  .venv/bin/python -m famboard.cli optimize-db
+  sudo systemctl start famboard
+  ```
+
+  I database nuovi nascono già compatti; quelli vecchi continuano a funzionare
+  anche senza eseguire il comando.
+- **Query della dashboard** — le letture "ultimi N giorni" passano sempre
+  dall'indice temporale (vedi `analytics._events`). Senza, la home impiegava oltre
+  3 secondi su due milioni di eventi; ora circa un decimo di secondo sulle 24 ore.
 
 ### Censimento dispositivi (backup CSV)
 
@@ -294,7 +324,10 @@ Suite `pytest` (funzionali, di regressione e di sicurezza) in `tests/`:
 ```
 
 I test girano in isolamento (DB temporaneo, nessun accesso al Pi-hole reale).
-Coprono classificazione, logica di controllo (orari/quota), enforcement
+Coprono classificazione, logica di controllo (orari/quota), validazione delle
+regole (una regola non interpretabile viene rifiutata, e se è già nel database
+non ferma l'enforcement degli altri dispositivi), conservazione e compattazione
+del database, indice usato dalle query della dashboard, enforcement
 (inclusa la verifica di sicurezza che la regex blocca-tutto non tocchi mai il
 gruppo Default), unione dispositivi, ingest/alert, analisi, report e le rotte
 web (autenticazione richiesta, resistenza a SQL injection, nessuna fuga di
