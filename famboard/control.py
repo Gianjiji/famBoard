@@ -7,16 +7,93 @@ state into Pi-hole group/client assignments.
 from __future__ import annotations
 
 import json
+import logging
+import re
 import sqlite3
 import time
 from datetime import datetime
 
+log = logging.getLogger("famboard.control")
+
 WEEKDAYS_IT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+MODES = ("block", "once", "schedule", "allow_window", "quota")
+MAX_QUOTA_MINUTES = 24 * 60
+_HM_RE = re.compile(r"(\d{1,2}):(\d{2})")
+
+
+class RuleError(ValueError):
+    """A rule (or one of its time windows) that cannot be interpreted."""
+
+
+def parse_hm(s) -> int:
+    """'HH:MM' as minutes since midnight. Raises RuleError on anything else:
+    'aa:bb', '25:99', '7', None."""
+    match = _HM_RE.fullmatch(s.strip()) if isinstance(s, str) else None
+    if not match:
+        raise RuleError(f"orario non valido: {s!r} (atteso HH:MM)")
+    hours, minutes = int(match.group(1)), int(match.group(2))
+    if hours > 23 or minutes > 59:
+        raise RuleError(f"orario non valido: {s!r} (atteso HH:MM)")
+    return hours * 60 + minutes
 
 
 def _hm(s: str) -> int:
-    h, m = s.split(":")
-    return int(h) * 60 + int(m)
+    return parse_hm(s)
+
+
+def validate_window(win) -> dict:
+    """Check one {"start","end","days"} window and return it normalised
+    (zero-padded times, sorted unique days). Raises RuleError.
+
+    start == end is refused: it describes an empty window, which for a
+    'schedule' rule never blocks and for an 'allow_window' rule blocks the
+    device around the clock. Neither is what the form was asked for.
+    """
+    if not isinstance(win, dict):
+        raise RuleError("finestra oraria non valida")
+    start, end = parse_hm(win.get("start")), parse_hm(win.get("end"))
+    if start == end:
+        raise RuleError("inizio e fine della finestra coincidono")
+    out = {"start": f"{start // 60:02d}:{start % 60:02d}",
+           "end": f"{end // 60:02d}:{end % 60:02d}"}
+    days = win.get("days")
+    if days is not None:
+        if (not isinstance(days, (list, tuple)) or not days
+                or any(isinstance(d, bool) or not isinstance(d, int) or not 0 <= d <= 6
+                       for d in days)):
+            raise RuleError("giorni non validi (attesi numeri da 0=lun a 6=dom)")
+        out["days"] = sorted(set(days))
+    return out
+
+
+def validate_rule(target: str, mode: str, from_ts: float | None = None,
+                  until_ts: float | None = None, windows: list[dict] | None = None,
+                  quota_minutes: int | None = None) -> list[dict] | None:
+    """Check a rule before it is stored; return its windows, normalised.
+
+    A rule that cannot be interpreted must never reach the table: the enforcer
+    reads every enabled rule on every cycle.
+    """
+    from .taxonomy import CATEGORIES
+    if mode not in MODES:
+        raise RuleError(f"modalità sconosciuta: {mode!r}")
+    if target != "all" and target not in CATEGORIES:
+        raise RuleError(f"categoria sconosciuta: {target!r}")
+    for name, value in (("from_ts", from_ts), ("until_ts", until_ts)):
+        if value is not None and (isinstance(value, bool)
+                                  or not isinstance(value, (int, float)) or value != value):
+            raise RuleError(f"{name} non valido")
+    if from_ts is not None and until_ts is not None and until_ts <= from_ts:
+        raise RuleError("la fine del blocco precede l'inizio")
+    if mode in ("schedule", "allow_window"):
+        if not windows:
+            raise RuleError("serve almeno una finestra oraria")
+        return [validate_window(w) for w in windows]
+    if mode == "quota":
+        if (isinstance(quota_minutes, bool) or not isinstance(quota_minutes, int)
+                or not 1 <= quota_minutes <= MAX_QUOTA_MINUTES):
+            raise RuleError(f"minuti di quota non validi (1-{MAX_QUOTA_MINUTES})")
+    return None
 
 
 def _in_window(now: datetime, win: dict) -> bool:
@@ -111,12 +188,29 @@ def rule_expired(rule, now_ts: float | None = None) -> bool:
             and now_ts >= rule["until_ts"])
 
 
+def blocking_now_or_none(rule, now_ts: float | None = None, conn=None) -> bool | None:
+    """rule_blocking_now, or None when the stored rule cannot be interpreted
+    (a window without 'start', a time like 'aa:bb', days that are not numbers).
+
+    Such a row can only predate validation or come from a hand edit, but one of
+    them used to raise out of desired_state and stop enforcement for every
+    device, every cycle. It is now reported and skipped: that one rule does not
+    block, all the others keep working.
+    """
+    try:
+        return rule_blocking_now(rule, now_ts, conn=conn)
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        log.warning("regola di controllo #%s non interpretabile, ignorata: %s",
+                    rule["id"], exc)
+        return None
+
+
 def desired_state(conn: sqlite3.Connection, now_ts: float | None = None) -> dict[str, dict]:
     """Return {mac: {'all': bool, 'cats': set[str]}} for rules blocking right now."""
     from .devices import member_macs_for_mac
     out: dict[str, dict] = {}
     for r in conn.execute("SELECT * FROM control_rule WHERE enabled = 1").fetchall():
-        if not rule_blocking_now(r, now_ts, conn=conn):
+        if not blocking_now_or_none(r, now_ts, conn=conn):
             continue
         # a rule on one MAC applies to every alias of the logical device
         for mac in member_macs_for_mac(conn, r["mac"]):
@@ -147,6 +241,8 @@ def add_rule(conn: sqlite3.Connection, mac: str, target: str, mode: str,
              from_ts: float | None = None, until_ts: float | None = None,
              windows: list[dict] | None = None, quota_minutes: int | None = None,
              note: str | None = None) -> int:
+    """Store a rule. Raises RuleError, storing nothing, if it is not valid."""
+    windows = validate_rule(target, mode, from_ts, until_ts, windows, quota_minutes)
     cur = conn.execute(
         "INSERT INTO control_rule(mac, target, mode, from_ts, until_ts, windows, "
         "quota_minutes, note) VALUES(?,?,?,?,?,?,?,?)",
@@ -176,6 +272,16 @@ def _target_label(target: str) -> str:
 
 
 def describe(rule, conn=None, now_ts: float | None = None) -> str:
+    try:
+        return _describe(rule, conn, now_ts)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        # Shown on the device page next to the delete button: a 500 there would
+        # leave no way to remove the broken rule from the interface.
+        return (f"{_target_label(rule['target'])} — ⚠️ regola non valida, "
+                f"ignorata: eliminala e ricreala")
+
+
+def _describe(rule, conn=None, now_ts: float | None = None) -> str:
     tgt = _target_label(rule["target"])
     mode = rule["mode"]
     if mode == "block":

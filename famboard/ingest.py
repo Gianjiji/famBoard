@@ -7,12 +7,15 @@ actually reached, and fire notifications for alerts on minors.
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 
 from . import db, notify
 from .config import settings
 from .pihole import PiholeClient
+
+log = logging.getLogger("famboard.ingest")
 
 BLOCKED_STATUSES = {
     "GRAVITY", "DENYLIST", "REGEX", "EXTERNAL_BLOCKED_IP",
@@ -280,14 +283,22 @@ def run_cycle(conn: sqlite3.Connection, client: PiholeClient) -> dict:
             db.set_meta(conn, "attention_checked_ts", str(now))
             conn.commit()
             result["attention"] = report.dispatch_attention(conn, now=now)
-    except Exception as exc:
-        print(f"[attention] error: {exc}")
+    except Exception:
+        log.exception("[attention] error")
     # Access-control enforcement (opt-in: meta flag 'enforce' = '1').
     row = conn.execute("SELECT value FROM meta WHERE key='enforce'").fetchone()
     if row and row["value"] == "1":
         try:
             from . import enforce
             result["enforce"] = enforce.reconcile(conn, client)
-        except Exception as exc:
-            print(f"[enforce] error: {exc}")
+        except Exception:
+            log.exception("[enforce] error")
+    # History retention (opt-in: RETENTION_DAYS > 0), applied at most daily.
+    try:
+        from . import maintenance
+        removed = maintenance.run_retention(conn, settings.retention_days)
+        if removed is not None:
+            result["pruned"] = removed
+    except Exception:
+        log.exception("[retention] error")
     return result

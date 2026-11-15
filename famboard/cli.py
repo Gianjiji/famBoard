@@ -142,6 +142,43 @@ def cmd_prune(days: int, yes: bool) -> None:
         conn.close()
 
 
+def cmd_prune_events(days: int, yes: bool) -> None:
+    from . import maintenance
+    conn = db.connect(settings.db_path)
+    try:
+        if days <= 0:
+            print("--days deve essere maggiore di zero")
+            return
+        if not yes:
+            n = maintenance.events_older_than(conn, days)
+            print(f"{n:,} eventi più vecchi di {days} giorni verrebbero eliminati "
+                  f"(gli avvisi restano).")
+            print("(nessuna modifica fatta: ripeti con --yes per procedere)")
+            return
+        n = maintenance.prune_events(conn, days)
+        print(f"eliminati {n:,} eventi più vecchi di {days} giorni")
+    finally:
+        conn.close()
+
+
+def cmd_optimize_db(no_vacuum: bool) -> None:
+    from . import maintenance
+    conn = db.connect(settings.db_path)
+    try:
+        res = maintenance.optimize(conn, vacuum=not no_vacuum)
+    finally:
+        conn.close()
+    mb = 1024 * 1024
+    print("indice domini: " + ("ricostruito in forma compatta" if res["compacted"]
+                               else "già in forma compatta"))
+    print("statistiche del planner aggiornate")
+    if res["vacuumed"]:
+        print(f"file ricompattato: {res['bytes_before'] / mb:,.0f} MB -> "
+              f"{res['bytes_after'] / mb:,.0f} MB")
+    else:
+        print("VACUUM saltato: lo spazio liberato verrà riusato, non restituito al disco")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="famboard")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -162,6 +199,15 @@ def main() -> None:
     pr = sub.add_parser("prune", help="drop devices unseen for N days (DB + Pi-hole)")
     pr.add_argument("--days", type=int, default=30)
     pr.add_argument("--yes", action="store_true", help="apply (default: dry-run)")
+    pe = sub.add_parser("prune-events",
+                        help="delete DNS events older than N days (alerts are kept)")
+    pe.add_argument("--days", type=int, required=True)
+    pe.add_argument("--yes", action="store_true", help="apply (default: dry-run)")
+    od = sub.add_parser("optimize-db",
+                        help="compact the domain index, refresh statistics, VACUUM "
+                             "(run with the service stopped)")
+    od.add_argument("--no-vacuum", action="store_true",
+                    help="skip VACUUM (no exclusive access or spare disk needed)")
     args = p.parse_args()
     if args.cmd == "init":
         cmd_init()
@@ -181,6 +227,10 @@ def main() -> None:
         cmd_census_sync(args.csv)
     elif args.cmd == "prune":
         cmd_prune(args.days, args.yes)
+    elif args.cmd == "prune-events":
+        cmd_prune_events(args.days, args.yes)
+    elif args.cmd == "optimize-db":
+        cmd_optimize_db(args.no_vacuum)
     elif args.cmd == "reclassify":
         conn = db.connect(settings.db_path)
         try:

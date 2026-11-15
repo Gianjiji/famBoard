@@ -83,6 +83,10 @@ class Settings:
     # The AI summary ships names + distress categories: refuse a non-local
     # endpoint unless the owner knowingly opts in. See config.host_is_local().
     ai_summary_allow_remote: bool = _bool(os.getenv("AI_SUMMARY_ALLOW_REMOTE"), False)
+    # History retention: delete DNS events older than this many days (0 = keep
+    # everything, the default). Alerts are kept regardless. The dashboard looks
+    # back at most 30 days, so anything above ~35 leaves it complete.
+    retention_days: int = int(os.getenv("RETENTION_DAYS", "0"))
     # Login throttling: max failed attempts per source before a cooldown.
     login_max_attempts: int = int(os.getenv("LOGIN_MAX_ATTEMPTS", "8"))
     login_cooldown_s: int = int(os.getenv("LOGIN_COOLDOWN_S", "300"))
